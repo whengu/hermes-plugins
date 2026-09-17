@@ -1,0 +1,5 @@
+name: write-guard
+version: 1.0.0
+description: 禁止命令/代码/路径中出现系统临时目录（/tmp、\Temp、$TMP、$TEMP、%TEMP% 等），命中即直接拦截，不分析意图
+provides_hooks:
+  - pre_tool_call
