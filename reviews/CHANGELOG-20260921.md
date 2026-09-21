@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-09-21 round2 复审修复（deleg_87a156db/sa-1 质量复审报告，CHANGES REQUIRED 后）
+
+| 编号 | 级别 | 缺陷（复审实测复现） | 修复 |
+|---|---|---|---|
+| M-1 | HIGH | `bash -c "echo x>cfg"` / `pwsh -Command` / `cmd /c` —— terminal 段的内嵌 shell 载体全线放行（F-A2 只封了 execute_code→shell 方向，terminal→内嵌 shell 方向没封） | `_EMBED_SHELL_RE` 识别解释器命令词 + -c/-lc/-Command//c//k 引号体，递归 `_judge_terminal`（复用深度上限）；处置分流在递归链内保持（内嵌 cp 仍 approve） |
+| M-2 | MEDIUM | `open(cfg,'w',encoding='utf8')`、`open(cfg, mode='w')` 放行——正则强制双参收尾 `\)`，合法高频写形态漏判 | 第二参后允许 `,`/`)` 收尾 + `mode=` 命名形可选前缀 |
+| M-3 | MEDIUM | terminal 显式 `workdir` 参数未参与判定基准（平台 per-command cwd 优先，插件恒用进程 os.getcwd()）→ `workdir=home + 相对路径写` 落差漏判 | `_judge_terminal(base_cwd=args["workdir"])`，与平台 `_resolve_command_cwd` 优先级一致 |
+
+第一轮 sa-1 修复验收结论：S-0/S-1/S-2/T-3/T-4/T-5/R-7/R-8 全部 **已修**（复审 AST/实测复核）。
+过程记录：本轮修复自验方式=先跑复审方留下的复现脚本（`_dbg_m.py`，修复前 6 项
+中 5 项放行、修复后 8/8 符合预期），再补 12 条回归用例（TC-M101~M122），
+全量 ALL PASS（29+4+176）后才提交（git 5d93150，09-21 工作首次入库，D-5 处置）。
+
 ## 2026-09-21 sa-0 对抗安全走查修复（deleg_b5774fc6/sa-0，实测证据）
 
 | 编号 | 绕过路径（实测复现） | 修复 |
