@@ -7,3 +7,28 @@ __pycache__/
 .pytest_cache/
 .coverage
 *.log
+
+# 影子备份（D-5：版本管理归 git，.bak 仅为提交前的短暂中间态，不入库）
+*.bak
+*.bak-*
+
+# 任务型一次性脚本（修复/调试/探测，结论沉淀进代码、测试与 CHANGELOG 后清除）
+_dbg_*.py
+_fix_*.py
+_add_*.py
+_q[0-9]*.py
+_r[0-9]*.py
+_r1*.py
+_sec*.py
+_upd_*.py
+_flip_*.py
+_chg_*.py
+_verify_*.py
+_test_edit*.py
+_find_lines*.py
+_probe_*.py
+
+# 审查/审计工作目录（子智能体临时脚本区，产物报告在 reviews/ 下入库，
+# 临时运行目录不入库）
+_r2tmp/
+_r3tmp/

@@ -1,0 +1,90 @@
+# write-guard 修订记录（CHANGELOG）
+
+本文件承载 handler.py / test_handler.py 的**修订史与缺陷考古**。
+代码注释只保留"为什么这样设计"，"曾经错在哪"一律记在这里。
+行号以本文件建档时（2026-09-21）的 handler.py 为基准，后续会漂移，按符号名检索。
+
+---
+
+## 2026-09-21 sa-0 对抗安全走查修复（deleg_b5774fc6/sa-0，实测证据）
+
+| 编号 | 绕过路径（实测复现） | 修复 |
+|---|---|---|
+| F-A1 | `open(r'...config.yaml','w')`——r/b/f 字符串前缀击穿 open/Path/os.open/shutil/tool_call 全部写形态正则（原正则要求 `(` 后紧跟引号） | 6 条正则统一容忍 `[rbfuRBFU]{0,2}` 前缀；open 改命名组 |
+| F-A2 | execute_code 内 `os.system('echo evil> CFG')` / `subprocess.run('cp a CFG', shell=True)` 零检测——shell 面整族旁路 A 守卫 | `_OS_SYSTEM_RE` / `_SUBPROC_CALL_RE` 提取字符串命令文本（list 形态逐项拼接），递归复用 terminal 判定链；`_NEST_DEPTH_LIMIT=3` 防 terminal↔execute_code 互递归 |
+| F-A3 | **守卫自身源码**（`.hermes/plugins/write-guard/handler.py`）可被 write_file 直接改写（.py 不在保护集）→ 一切保护可被缴械 | `plugins/` 下 .py/.yaml/.yml 纳入受保护；开发通道不受影响（workspace 可写、deploy.py 命令文本不含受保护字面量） |
+| F-A4 | `sed -i.bak` / `--in-place=.bak` 漏判（旧正则要求 `-i` 后是空白/行尾） | 短形改负向断言 `(?![\w-])`；补 `--in-place` 长形态 |
+| F-A5 | `truncate -s 0 CFG` 不在写矩阵 | truncate 命令词 → 写 |
+| F-A6 | `pwsh -c Set-Content -Path CFG` 不在写矩阵 | Set-Content/Add-Content/Out-File（大小写不敏感）出现在受保护路径前 → 写 |
+| F-A7 | `cp x <home>/`、`cp -t <home>`：目标是**目录本身**，`_is_protected_config` 对目录早退 False，token 根本进不了候选收集 | terminal 面收集扩展 home 目录本身；矩阵 cp 分支识别目录目标。边界收紧：**原 DR-25「cp 至目录 → 放行」被 sa-0 证明正是绕过「cp 目标文件」检测的写法**，按用户「cp 弹审批」决策翻转为 approve（TC-A-46 同步翻转）；读方向（cat/ls 目录）不受影响 |
+| C-cwd | terminal 的 `cwd` 参数可指向 /tmp 而 command 干净 → C 对该参数零扫描 | C 守卫对 terminal 增扫 cwd 参数 |
+
+**过程事故（如实记录）**：F-A7 实现中调用点误传作用域外变量 `pipe_cwd` →
+`NameError` 被守卫项级异常隔离吞成 **fail-open**（A 项 terminal 路径整体静默
+失效、返回值 None=放行）。11 个既有用例当场捕获。教训：**异常隔离会把实现
+bug 转化为保护失效，测试套件是它之下唯一防线**——新增判定分支必须先落测试。
+
+**声明的接受边界（本轮不修，理由如下）**：
+- HERMES_HOME 环境变量被进程外改往他处 → 保护基准整体漂移。模型无法修改
+  gateway 进程环境，属运维治理面，非插件可防御（插件若拒绝跟随环境变量，
+  则 profile 多实例场景失效——DR-05 实时读取是有意设计）。
+- Windows 8.3 短名（MYAGEN~1）、目录尾点、junction 中转：需文件系统级解析
+  （IO + 平台调用），与 NFR-05 纯内存判定设计冲突；NTFS 上 8.3 名默认多为
+  禁用状态。若实际威胁出现，另立项评估。
+- 非扫描工具集（process_manage.write、chrome_upload_file、connector 面写
+  工具等）不经插件：Hermes 无统一"落盘前"hook，插件只能白名单式覆盖已知写
+  工具；每新增写工具需人工评估补入（维护契约，同 _READ_TOOLS 快照提醒）。
+- execute_code 变量拼接/动态构造路径（`open(p)`，p 来自运行时）无法静态判定
+  → 放行（Q-03 设计本意：静态守卫防错不防恶意）。
+
+## 2026-09-21 质量修复轮（独立工程质量审查 deleg_b5774fc6/sa-1 后）
+
+| 编号 | 问题 | 处置 |
+|---|---|---|
+| S-0 | plugin.yaml description 只描述临时目录拦截（v1.0 时代），且 version 停留 1.0.0 未反映 09-17 扩展与 09-21 决策 | manifest 重写为四项守卫总览；version → 1.2.0 |
+| S-1 | 注释内嵌决策考古（B1~B5 / MED / LOW / TC-A-62 修订史与判定逻辑混居） | 历史迁入本文件；代码注释只留设计理由。手术经 AST 等价校验（去 docstring 后与术前备份逐字节一致），行为零变化 |
+| S-2 | `_approve_result` / `_config_block_result` 重复实现"变体命中双段展示" | 抽 `_shown_path()` 公共 helper；两函数保留（返回 shape 不同：approve 带 rule_key，block 不带，语义差异有意保留） |
+| T-3 | test 用 `handler.GUARDS[i]` 硬索引替换桩守卫，守卫增删即静默错位（守卫 D 插入曾致 6 用例连锁失败） | 改 `_stub_guard(name, fn)` contextmanager，按 `__name__` 定位；函数名成为测试契约 |
+| T-4 | 清单不变量测试与"5 项快照"混在一条断言 | 拆为 TC-C1-13（安全不变量，恒真红线）+ TC-C1-14（清单快照，变更提醒） |
+| T-5 | hook 用例数 `4` 硬编码进收尾文案 | `_hook_cases` 列表 + `HOOK_N = len(...)` |
+| E-3 | 原 TC-E-03 用 `hindsight_retain` 测"A 异常后继续轮询"，但 retain 不经过 A，测不到该语义（假绿） | 改用 `write_file + _CFG`（A 真实命中且抛异常）验证续轮询 |
+| R-7 | deploy.py 一致性校验自指（copy 后比对必然相等）、py_compile 外抛裸 traceback、路径硬编码 | 复制前锚定源 sha256、部署后比对快照；subprocess 返回码判定；SRC/DST 支持 argv 覆盖 |
+| R-8 | `_ENV_EXPAND_ROUNDS` 魔数、判定热路径内联 `re.xxx` | 命名常量；14 处内联正则预编译进 ②模式编译区 |
+| P-10 | `_terminal_position_is_write` 的 `norm` 参数从未使用 | 删除该参数（`_guard_*` 的 `task_id` 是四守卫统一签名，保留） |
+
+## 2026-09-21 对抗性安全走查（deleg_fdfaf47f）修复项
+
+| 编号 | 原缺陷（可绕过路径） | 修复 |
+|---|---|---|
+| B1 | `~` / `~/...` 形态路径不做展开 → 与归一化后的 HERMES_HOME 比对失配，`write_file ~/../.hermes/config.yaml` 类写法绕过 | `_normalize_path` 增加 `os.path.expanduser("~")` 展开，与 Hermes 侧 `get_subprocess_home()`（`tools/file_tools_paths.py::_expand_tilde`）语义对齐 |
+| B2 | 受保护判定只看文件名含 `config` 子串 → `profile.yaml` / `settings.yaml` / `.env` / `*.json` 完全不设防 | `_is_protected_config` 扩为：HERMES_HOME 内 + 扩展名 yaml/yml/json 或文件名含 config 或 `.env` 系列（用户决策「范围要扩大」） |
+| B3 | terminal / execute_code 写配置一律 approve，与"仅记忆写要审批"的用户要求冲突 | 新增 `_config_write_disposition()` 分流：cp/copy/install/shutil.copy 类 → approve（用户明确"cp 是改配置文件的方法，要弹审批"）；echo>/>>/tee/sed -i/dd of=/curl -o/open('w')/write_text/os.open 写标志/代码内 write_file 调用 → block |
+| B4 | MSYS 路径 `/d/myagent/.hermes/config.yaml` 不做转换 → 与 `d:/...` 归一化结果不等，绕过 | `_MSYS_FULL_RE` + `_MSYS_DRIVE_RE` 双条件：`/x/` 单盘符与 `/cygdrive/x/`、`/mnt/x/` 形态转 `x:/`；单字母判定避免误伤 `/tmp` 等 POSIX 根路径 |
+| B5 | Windows verbatim 前缀 `\\?\`、`\\.\`、`//?/` 不参与归一化 → 同一文件不同写法，绕过 | `_VERBATIM_PREFIX_RE` 剥离前缀；**必须**在 `_unescape_string_literal` 与连续斜杠压缩**之前**执行（否则 `\\` 被解义、`//?/` 被压成 `/?/`，正则失配——本条曾三次返工，教训：归一化步骤顺序是正确性的一部分） |
+| L4 | `shutil.move` / `os.rename` / `os.replace` 目标为配置时不拦 | 用户决策「改名和复制不拦截」→ 保持放行（OOS-09 路径级操作语义），TC-A-64/65/66 锁定 |
+| A 守卫语义 | write_file / patch 写配置走 approve（弹卡可放行） | 用户决策改为 block 直接截断，消息指引 safe-config-modify skill |
+| C 守卫 | 读工具参数含 `/tmp` 字样被误拦；白名单曾膨胀到 14 项 | 用户决策收敛为 5 项定案：`read_file` / `search_files` / `web_search` / `hindsight_recall` / `hindsight_reflect` 无条件放行，其余工具一律走参数检查 |
+
+## 2026-09-21 `_unescape_string_literal` 重写（隐藏最久的缺陷）
+
+**症状**：`write_file(path=r"D:\myagent\.hermes\tui-theme-boot.json")` 被放行，而 `profile.yaml` 正常拦截。测试 TC-A-62 持续失败但手改小脚本复现不一致，排查成本高。
+
+**根因**：旧实现按 C/Python 转义语义解义**单反斜杠**序列，`simple` 表含 `"t": "\t"`、`"u"` 分支等。Windows 路径里 `\t`（`\tui-theme-boot.json` 的前缀）被解义成 **tab 字符**、`\u` 被解义成 **unicode 转义**，归一化结果变成含控制字符的乱码路径 → 与受保护前缀不等 → 保护静默失配。凡路径段以 `t/u/n/r/a/b/f/v/0-7/x` 开头的 Windows 反斜杠路径全部中招（`\temp`、`\new`、`\users` …）。
+
+**修复**：只解义**成对双反斜杠**（`_DOUBLE_BACKSLASH`，terminal 命令引号内的转义写法）为单反斜杠；单反斜杠 + 任意字符一律按字面路径保留。原 `_ESCAPE_SEQ_RE` 随之废弃删除。
+
+**教训（写入设计原则 DR-22 修正）**：路径归一化的输入是"用户/模型写的路径文本"，不是"待求值的 Python 字符串字面量"。把两者混为一谈会让安全判定依赖于字符串转义语义——安全边界上不允许这种依赖。
+
+## 2026-09-21 守卫 D：gateway 生命周期命令禁令
+
+- 触发：助手两次未加载 gateway-restart skill 就凭记忆执行 `hermes gateway restart`（用户拒绝并震怒）；该命令本身也在 Hermes 危险命令清单内（会杀掉运行中的 agent）。
+- 决策：`hermes gateway restart|run|start` 一律 block，不进审批（防止"批准"成为误操作通道）。`status` 查询允许；`stop` 未在用户禁令清单内 → 放行。
+- 消息为固定文案（用户指定原文，不做插值）："你违反了用户的规则, 必须使用skill指定的方式来访问hermes gateway"
+- 边界（有意为之）：按命令文本匹配，`grep 'hermes gateway restart' docs/` 这类提及也会 block。理由：守卫 D 若放过引号内的嵌套执行面（`bash -c "hermes gateway restart"`）就形同虚设，而精确区分"引用 vs 执行"需要 shell 解析，成本高于收益 → 宁可多拦，用户改写法即可。此与守卫 C 的"纯文本提及放行"边界不同，属两处守卫的不同设计取向。
+- 定位：防呆层（防错不防恶意）。变量拼接（`V=restart; hermes gateway $V`）、base64 混淆等刻意规避不在覆盖范围。
+
+## 2026-09-17 扩展初版（配置写保护 + 记忆写保护）
+
+见 `design/design.md`（设计）、`requirements/requirement.md` v1.1（需求）、
+`reviews/review-001.md` / `review-002.md`（两轮独立代码走查，13 条 findings 及其测试回挂）。
+历史评审文件为**时点快照**，不随后续决策回改。

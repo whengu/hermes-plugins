@@ -3,14 +3,16 @@
 
 def register(ctx):
     import logging
-
-    logger = logging.getLogger(__name__)
-    # 插件加载时以本文件所在目录为根导入 handler（避免相对导入对加载上下文的依赖）
-    import sys
     from pathlib import Path
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import handler
+    import importlib.util
 
+    # R-4：按文件路径加载为唯一模块身份（write_guard_handler），不进 sys.path、
+    # 不占通用模块名 —— 避免多插件同名 handler.py 在 sys.modules 互相遮蔽。
+    path = Path(__file__).resolve().parent / "handler.py"
+    spec = importlib.util.spec_from_file_location("write_guard_handler", str(path))
+    handler = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(handler)
+
+    logging.getLogger(__name__).info("write-guard loaded from %s", path)
     ctx.register_hook("pre_tool_call", handler.on_pre_tool_call)
-    logger.info("write-guard: pre_tool_call hook 已注册")
