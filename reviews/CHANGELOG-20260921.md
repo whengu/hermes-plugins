@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-09-22 round8（round7 双路修复 + 终端检查范围决策收缩，deleg_46c5c0d1）
+
+**用户决策（2026-09-22）**：终端内容检查不考虑复杂情况（"不是做 360"），边界
+正式落 requirements/requirement-20260922-boundary.md——纳入范围（常规命令/链式/
+整词引号/常规粘连/内嵌一层/续行）零缺陷=必修；排除范围（引号劈 token 穿插、
+反斜杠奇偶算术、双引号内转义表、变量间接/eval/编码混淆、tar/ln/robocopy 专属
+语义、跨家 tilde）=登记接受边界。收敛判据改为：**纳入范围内零缺陷 + 排除项
+全部登记在案**。
+
+**修复项（TC-R8 17 条 + _verify_r8 30/30，PM 门禁全复跑）**：
+- **F-7-1（HIGH）续行归一语义重写**：两处盲 replace（terminal 入口 + gateway
+  守卫，第三处同源）→ _join_line_continuations 引号感知状态机：引号外 反斜杠+
+  LF/CR+LF 删字符直接相接；单引号内字面不处理；双引号内不处理（登记）；反斜杠
+  逐对消耗自然满足奇偶语义。实测真续行 LF/CRLF approve、2bs 分段旁路封、
+  gateway 两形红线 block 保持。CHANGELOG round7 失实口径已括注修正。
+- **F-7-2（灰区两行判定=做）**：`cp "--target-directory"=<dir>` 引号选项后
+  = 粘连 token——提取链加 elif（=前缀+before 命中引号选项正则）取 =后路径，
+  判定仍由 -t 分支门把关；两引号形 approve、非 home 负例放行。
+- **验证脚本归因两处（PM 复核）**：半混 -"tdir" 形基线本为 approve（整词选项
+  方向，纳入范围），脚本理论值误标 PASS——修正预期非改代码；`rm -r` 拦截属平台
+  approvals 层职责不属插件四守卫，分层负例替代。
+- **接受边界登记（排除范围逐条，TC 锁现状方向防漂移）**：劈 token 穿插族
+  （cp -'t'DIR / -"t"DIR）PASS；双引号内 bs+LF、反引号混排、4bs+LF PASS；
+  3bs+LF approve；半混劈 token tdir= 变体 PASS；F-7-3 保守弹卡 FP 接受；
+  跨家 tilde 族维持 F-Q5 登记。
+
+**过程记录**：FIX 子代理按"制品先建骨架、每步落盘"纪律执行——交卷时仍撞输出
+截断（第 4 次），但代码/TC/主文档全部落盘可接续，PM 仅补齐 CHANGELOG 登记与
+验收记录（本轮起截断不再造成工作丢失，验证了制品交接的防断价值）。
+
+**基线**：ALL PASS 29+4+250（+17 条 TC-R8）；_verify_r7 30/0、r5 28/0、r3 25/0
+无回潮。
+
 ## 2026-09-22 round7（round6 双路复审修复，deleg_7f0e4d85）
 
 **round6 复审**：sa-1 质量 CHANGES REQUIRED（轻量，Q-6-1 唯一实质缺口）；
@@ -17,6 +50,9 @@ r6_d 仿真已验证本修法零回潮）。
 - **NL（HIGH）**：_judge_terminal 入口先把 反斜杠+换行（含 CRLF 形）粘连回一行，
   再按换行分段（分段集加 \n、\r；引号内换行由 _split_shell 引号感知不切）。
   D 卷全 9 攻击形封堵，读/workspace/续行/无关命令负例零回潮。
+  > 口径修正（round8）：此句失实——盲 replace 不感知引号态与反斜杠成对，
+  > 2bs+LF 真分段形被误并（旁路）与 gateway CRLF 续行形实际未封，由 round8
+  > F-7-1 语义重写修复（见 round8 条目与 reviews/fix-008.md）。
 - **Q-6-1（MED）**：GNU 合法粘连短形 `cp -t<dir>` / `-t=<dir>` 旁路（含缴械
   场景）+ 引号选项形 `cp '-t' <dir>` ——新增 _GLUED_T_RE（cluster 在前、t 收尾、
   余部=目标值，与 getopt 一致）提取进 norm，_COPY_T_QUOTED_RE 认引号选项；

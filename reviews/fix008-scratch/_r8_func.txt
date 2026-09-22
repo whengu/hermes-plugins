@@ -1,0 +1,62 @@
+def _glue_line_continuations(text: str) -> str:
+    """R8-F1（round8，fix-008 F-7-1/F-7-1b）：引号感知的反斜杠续行粘连归一。
+    取代 round7 盲 replace（不感知引号与反斜杠成对，`\\`+LF 误粘连、真旁路漏粘连
+    双向皆错）。语义：引号外与双引号内反斜杠成对消耗，奇数个时最后一个与紧随的
+    LF / CR+LF 构成续行粘连（两者删除，行直接相接）；单引号内反斜杠无转义语义，
+    原样保留；双引号内反斜杠仅对 $ ` " \\ 换行生效，其余字符前为字面。
+    仅影响判定视图（调用方无副作用），不改变实际执行内容。"""
+    BS, CR, LF, SQ, DQ = chr(92), chr(13), chr(10), chr(39), chr(34)
+    out = []
+    i, n = 0, len(text)
+    quote = None                        # None / SQ / DQ
+    while i < n:
+        ch = text[i]
+        if quote != DQ and ch == SQ:
+            quote = None if quote == SQ else SQ
+            out.append(ch)
+            i += 1
+            continue
+        if quote != SQ and ch == DQ:
+            quote = None if quote == DQ else DQ
+            out.append(ch)
+            i += 1
+            continue
+        if quote != SQ and ch == BS:
+            k = 0
+            while i + k < n and text[i + k] == BS:
+                k += 1
+            out.append(BS * (k // 2))   # 成对消耗 → 字面反斜杠
+            i += (k // 2) * 2
+            if k % 2 == 1:              # 剩单个反斜杠
+                if text[i + 1:i + 3] == CR + LF:
+                    i += 3              # 反斜杠+CR+LF = 粘连（删两者）
+                elif text[i + 1:i + 2] == LF:
+                    i += 2              # 反斜杠+LF = 粘连（删两者）
+                elif quote == DQ and text[i + 1:i + 2] not in (
+                        SQ, DQ, "$", BS, CR, LF, ""):
+                    out.append(BS)      # 双引号内非特殊字符前的反斜杠=字面
+                    i += 1
+                else:
+                    out.append(BS)      # 保留余下反斜杠，后随字符按原语义处理
+                    i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _glued_view(raw: str) -> str:
+    """R8-F2/F2b/F2c（fix-008）：剥 token 内引号字符的选项粘连判定视图。
+    shell 剥引号语义下 cp '-t'DIR / -"t"DIR / '--target-directory'=DIR /
+    -"target-directory" 与裸粘连形同义；仅当剥后形态命中选项链（粘连短形/
+    长形/独立选项词）才采用，防普通含引号文件名误判。"""
+    if chr(39) not in raw and chr(34) not in raw:
+        return raw
+    v = raw.replace(chr(39), "").replace(chr(34), "")
+    low = v.lower()
+    if (low.startswith("--target-directory")
+            or low.startswith("-target-directory")
+            or low in ("-t", "--target-directory")
+            or _GLUED_T_RE.match(v)):
+        return v
+    return raw

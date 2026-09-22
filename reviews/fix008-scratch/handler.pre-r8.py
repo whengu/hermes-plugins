@@ -743,45 +743,6 @@ def _split_shell(text, seps):
     return [s for s in (x.strip() for x in out) if s]
 
 
-def _join_line_continuations(text):
-    """F-7-1（round8）：引号感知续行粘连（取代 _judge_terminal 入口盲 replace——
-    盲替换把成对反斜杠后的真换行也误当续行合并、且不认引号态，转义反斜杠形
-    `echo a<2bs>LF cp evil <guard>` 两段被误并成一段=旁路）。引号外 反斜杠+LF
-    （含反斜杠+CRLF）=shell 续行 → 删两（三）字符、行直接相接；单引号内字面
-    不处理；双引号内不处理——按 2026-09-22 范围决策排除第 2 条登记接受边界，
-    TC 锁现状。反斜杠逐对消耗，自然满足「成对不粘连、奇数末位单斜杠为字面」。"""
-    NL, CR, BS, SQ, DQ = chr(10), chr(13), chr(92), chr(39), chr(34)
-    out, i, n, quote = [], 0, len(text), None
-    while i < n:
-        ch = text[i]
-        if quote == SQ:
-            if ch == SQ:
-                quote = None
-            out.append(ch)
-            i += 1
-        elif quote == DQ:
-            if ch == DQ:
-                quote = None
-            out.append(ch)
-            i += 1
-        elif ch == BS and i + 1 < n:
-            nxt = text[i + 1]
-            if nxt == NL:
-                i += 2                          # 续行：反斜杠+LF 删两者
-            elif nxt == CR and text[i + 2:i + 3] == NL:
-                i += 3                          # 反斜杠+CRLF 同删
-            else:
-                out.append(ch)                  # 转义/成对反斜杠：两字符原样消耗
-                out.append(nxt)
-                i += 2
-        else:
-            if ch in (SQ, DQ):
-                quote = ch
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
 def _judge_terminal(command, tool_name, depth=0, base_cwd=None):
     """terminal 写命令判定（DR-09 / 3.2.2）：先按管道分段（LOW-1）、段内再按
     （&& / ;）分段 + cd 链静态跟踪。管道两侧环境独立（设计 3.2.2：管道左侧
@@ -794,9 +755,9 @@ def _judge_terminal(command, tool_name, depth=0, base_cwd=None):
     # LOW-1 语义保持：先管道级、cd 不跨管道传播
     # NL（round6 sa-0 D 卷实锤）：换行=shell 命令分隔符，此前分段集不含换行，
     # ls+换行+cp evil <guard> 整段不命中=反缴械旁路。修法（复审侧 r6_d 仿真
-    # 验证）：反斜杠+换行=续行，引号感知状态机删字符直接相接（round8 F-7-1 重写，禁盲 replace）；再按换行分段（引号内换行由
+    # 验证）：反斜杠+换行=续行粘连回一行；再按换行分段（引号内换行由
     # _split_shell 引号感知保持不切——heredoc/引号负例/既有链零回潮）。
-    command = _join_line_continuations(command)  # F-7-1（round8）引号感知粘连
+    command = command.replace("\\\n", " ").replace("\\\r\n", " ")
     for pipe_seg in _split_shell(command, ("||", "|")):
         pipe_seg = pipe_seg.strip()
         if not pipe_seg:
@@ -863,11 +824,6 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             norm_raw = raw[3:]
         elif raw.lower().startswith("--target-directory="):
             norm_raw = raw.split("=", 1)[1]   # C3：cp --target-directory=<dir> 粘连
-        elif raw.startswith("=") and _COPY_T_QUOTED_RE.search(seg[:m.start()]):
-            # F-7-2（round8 灰区判=两行可修则做）：引号选项词后紧跟 = 粘连形
-            # cp "--target-directory"=<dir>——本 token 值即 = 后路径（选项词在
-            # 前一 token；判定仍由 -t 分支 _COPY_T_QUOTED_RE 门把关，保守收集）。
-            norm_raw = raw[1:]
         else:
             gm = _GLUED_T_RE.match(raw)   # Q-6-1：-t<dir> 粘连短形
             norm_raw = gm.group(1) if gm else raw
@@ -1117,7 +1073,7 @@ def _guard_gateway_cmd(tool_name: str, args: dict, task_id: str = "") -> dict | 
     if not isinstance(text, str) or not text:
         return None
     # 反斜杠续行归一（`hermes gateway \<nl>restart` 实际是一条命令）
-    text = _join_line_continuations(text)   # F-7-1 同源：CRLF 续行一并封（红线 block 保持）
+    text = text.replace("\\\n", " ")
     m = _GATEWAY_BANNED_RE.search(text)
     if m:
         logger.warning(
