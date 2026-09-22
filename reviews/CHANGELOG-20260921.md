@@ -8,6 +8,55 @@
 
 ---
 
+---
+
+## 2026-09-23 round15（round14 双路 NOTES 收线：S14-1 cluster 零-dash 误拦收窄 + Q1/Q2 名实改实，fix-015）
+
+**立项**：round14 双路裁决——安全路 review-014-sec CHANGES REQ（S14-1，MED：
+`_OUTPUT_QUOTED_RE` cluster 支 `[-]?` dash 可省 → `curl "Cairo" <CFG>` /
+`sort "logo" <CFG> d` 引号字母 o 尾词 + 受保护段实锤 block，裸形同义=PASS，
+唯一切换量=引号）+ 质量路 PASS_WITH_NOTES（Q1 同根：零-dash 放行 `"o"/"O"` 与
+注释「单 dash 专属」名实不符；Q2 死选项机理句失实——`--output=` 端实测 rc=2
+option unknown，非「=并入文件名」，后者系 cluster 短形 `-sfo=` 机理，8dde55e
+档案形，见上节 A4 改实句）。PM 第三路独立复验 FP 两形 block 坐实。准绳
+requirement-20260922-boundary.md 误拦向、红线邻近「零误拦优先」。
+
+**修法定演（PM 内存猴补丁 11 形矩阵实测，改动1 后代码复跑 `_r2tmp/probe_r15.py` 11/0）**：
+
+**修复项（TC-R15 6 条 + pm_verify_014 扩 29 形，门禁实跑全绿）**：
+- 改动1（1 字符）：`_OUTPUT_QUOTED_RE` 第三交替支 `|[-]?[a-zA-Z]*[oO]` →
+  `|-[a-zA-Z]*[oO]`（dash 单字面必选，去 `?`）。FP 消除（`"Cairo"`/`"logo"` → PASS）、
+  靶心保持（`-so`/`-sSo`/`-qO`/`-ro`/`"-o"`/`"-O"`/`"-o<CFG>"` 全 block、`"-oL"`
+  PASS）、新现值 `curl "o" <CFG>` → PASS（零-dash 与注释「单 dash 专属」名实归正）。
+  同轮 L640 注释字面 `["'][-]?…` 同步改 `["'][-]…`（承诺与字形对拍）。
+  handler sha 前16 `0a93ac9caf8ee25e`→`149497733ab9e8c2`。
+- 改动2（NOTES，全部实测背书）：① CHANGELOG round14 节 A4 句 + fix-014.md §A-A4
+  机理改实（curl `--output=` 端实测 rc=2 不可运行形、归 curl 选项域；「=并入
+  文件名」机理归 `-sfo=` 短形专属，引 8dde55e 档案）——死选项定级与无害多防/
+  禁扩表结论不变；② pm_verify_014 头部旧口径「29 形/16 靶心」（含表头行）作废
+  改实为「r14 修前 27 形/靶心 FAIL 13；r15 扩 29 形/修前 FAIL 15」。
+- 改动3（测试锁）：test_handler 新增 `run_r15_fixes()`（TC-R15-01~06：两 FP 锁
+  PASS + 两靶心锁 hit + 零-dash 边界锁 + 锁形不回退）；pm_verify_014 追加
+  T19/T20 两 FP 形（want=pass，修前 FAIL=本批靶心）→ **改后 29/0**。
+
+**教训固化句（本轮起入验收纪律）**：**正则放宽类改动，字符类每个可选项（`?`/`*`/
+量词）必须与注释承诺逐词对拍**——「单 dash 专属」的文字承诺 vs 字形 `[-]?`（dash
+可选）自相矛盾，承诺落空即误拦（Q1 与 S14-1 同根，一处缺陷两路照见）。上轮教训是
+「修复只落触发样本、族内邻支成下洞」（覆盖不对称），本轮是「改动的字面与宣称口径
+未对拍」（名实不符）——同为「改 A 只核 A、不核 A 的说明书」。
+
+**过程**：不改 deploy/plugin.yaml；未 git commit、未 deploy（PM 收线批统一）。
+
+| # | 命令 | 结果 |
+|---|------|------|
+| 1 | python reviews/fix014-scratch/pm_verify_014.py | 通过 29 失败 0（含新 T19/T20，FP 两形归 PASS、13 旧靶心不回退） |
+| 2 | python test_handler.py | ALL PASS (29 scan + 4 hook + 369 new，含 TC-R15 6 条 ≥4 达标) |
+| 3 | python _verify_r14.py | 通过 43 失败 0（不回潮） |
+| 4 | python reviews/fix013-scratch/pm_verify_013.py | 通过 30 失败 0（不回潮） |
+| 5 | python _verify_r13/r12/r11/r10/r9/r8/r7/r5/r3 | 41/53/43/46/46/30/30/28/25 全零失败 |
+| 6 | python reviews/fix012-scratch/pm_verify_012.py | 25 形零 FAIL（d9/d10 等锁不回退） |
+| 7 | 红线四形（on_pre_tool_call） | gateway restart=block、cp 配置=approve、Copy-Item 源位读=PASS、-Destination CFG WS=approve（4/4） |
+
 ## 2026-09-23 round14（安全路 F-13-S1 + 质量路 Q13-A/B 合并修复：粘连入口引号整包全族封堵，fix-014）
 
 **立项**：round13 双路同洞互证——安全路 review-013-sec F-13-S1（HIGH，`-t`/
@@ -34,8 +83,11 @@ cp 活证真写）；PM 第三路复验 pm_verify_014 基线 **13 靶心 FAIL / 
   门后（门外 `grep "-so"` 零扰动）。T11~T14 → block；负例 T18 `curl "-oL"`、
   K9/K11 grep 门外、`"-H"` 任意引号词保持 PASS。
 - **附录登记（PM 实测，比照 r13 `=` 形附录句）**：改动A-A4 `curl "--output=<CFG>"`
-  长形引号整包在 curl 8.1.2 Windows 端是**死选项**（`=` 并入输出文件名，与 `-o=`
-  同族），不构成对 `<CFG>` 的真写——判 block 属**无害多防**（不可运行形弹卡零代价），
+  长形引号整包在 curl 8.1.2 Windows 端是**死选项**（端实测裸形与引号形均报
+  `option --output=…: is unknown` **rc=2——不可运行形，归 curl 选项解析域**；
+  「`=` 并入输出文件名」系 **cluster 短形 `-sfo=` 专属机理**（8dde55e 档案
+  `=_dst2.txt` 落盘实证），非关长形——round15 fix-015 改实，见下节 Q2），不构成
+  对 `<CFG>` 的真写——判 block 属**无害多防**（不可运行形弹卡零代价），
   与本轮靶心的 `-t`/`of=`/`--target-directory=` 活证真写族区别登记，禁据此扩长表。
   同理维持不修面：PS 域等号形 `-Destination=`（pwsh 拒绝绑定）、`sort "-t<dir>"`
   （`-t` 非 sort 输出语义，门外）、劈 token 穿插族（`cp "-t..."x/...` = boundary
@@ -55,12 +107,13 @@ F-13-S1 的根因正是 r13 改动B 修了 `_GLUED_O_RE` 而未扫 `_GLUED_T_RE`
 族内邻支成为下一个洞**。
 
 **过程（handler.py 零改动之外的收尾）**：代码面（改动A/B）在 round14 施工段已入
-- 端活证第 7 项终态登记（PM 门禁窗，2026-09-23）：收尾窗与 PM 现场复跑两次均被
-  approvals manual 审批卡超时拦截（无人应答，非 write-guard 拦截、非修复缺陷）——
-  不重试不绕行；该项以立项前活证链（ecca470：cp "-t…" / dd "of=…" 真写落盘实证）+
-  round14 双路复审任务书「每条 finding 必端活证」硬要求兜底，现场复跑待用户在会话时。
 工作树并通过 pm_verify_014 靶心全翻转；本轮收尾批补齐 TC-R14（16 条）+ _verify_r14
 （43 形）+ 本节 + fix-013 四节回填 + reviews/fix-014.md 制品，PM 复跑门禁数组见下表。
+  - 端活证第 7 项终态登记（PM 门禁窗，2026-09-23；round15 fix-015 Q5 排版随批——
+    原嵌句断读已归位）：收尾窗与 PM 现场复跑两次均被 approvals manual 审批卡超时
+    拦截（无人应答，非 write-guard 拦截、非修复缺陷）——不重试不绕行；该项以立项前
+    活证链（ecca470：cp "-t…" / dd "of=…" 真写落盘实证）+ round14 双路复审任务书
+    「每条 finding 必端活证」硬要求兜底，现场复跑待用户在会话时。
 
 | # | 命令 | 结果 |
 |---|------|------|

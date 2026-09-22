@@ -637,12 +637,12 @@ _OUTPUT_FLAG_RE = re.compile(
 # F-11-2（round12）：引号包输出选项词 `curl "-o" <file>`（shell 剥引号后与裸 -o
 # 同义，curl 活证真写；比照 _COPY_T_QUOTED_RE 先例，整词成对、内容不可选、不做
 # 通用引号剥离——F-7-2 禁令不回潮）。
-# Q13-A（round14）：并引号包 cluster 尾 o 支 `["'][-]?[a-zA-Z]*[oO]["']`——引号内
+# Q13-A（round14）：并引号包 cluster 尾 o 支 `["'][-][a-zA-Z]*[oO]["']`——引号内
 # = cluster 字母串且尾字母 o/O（`curl "-so" <CFG>` 与裸 -so 同义，活证真写）；
 # 字符类比照 _OUTPUT_FLAG_RE dash cluster 支同款，单 dash 专属（双 dash 红线不扩），
 # 值走既有后随 token 判定；整支在 _OUTPUT_FLAG_CMDS_RE 门后，门外 grep "-so" 零扰动。
 _OUTPUT_QUOTED_RE = re.compile(
-    r"[\x27\x22](?:-[oO]|--output(?:-document)?|[-]?[a-zA-Z]*[oO])[\x27\x22]\s*$")
+    r"[\x27\x22](?:-[oO]|--output(?:-document)?|-[a-zA-Z]*[oO])[\x27\x22]\s*$")
 _OUTPUT_FLAG_EQ_RE = re.compile(
     r"(?:--output-document|--output|-o|-O)=(.*)$", re.IGNORECASE)
 

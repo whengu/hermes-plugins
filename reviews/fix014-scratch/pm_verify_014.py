@@ -1,5 +1,9 @@
 # round14 验收断言（F-13-S1/X-14-1 合并洞修复靶心 + 锁形）
 # 基线 round13 10a2094 预期: T 组 FAIL(旁路), K 组保持现值。修后 0 失败=达标。
+# 形数口径（fix-015 改实，历轮立项档案「29 形/16 靶心」系含表头行的旧口径作废）：
+#   round14 修前基线 = 表 27 形，靶心 FAIL 13（T1~T7/T11~T15/T17）；修后 27/0。
+#   round15（fix-015 改动1）追加 T19/T20 两 FP 锁 = 表 29 形，修前靶心 FAIL 15
+#   （13+T19/T20 零 dash cluster 误拦形），修后 29/0=本文件达标值。
 import importlib.util, os
 B = chr(92)
 os.environ["HERMES_HOME"] = "D:" + B + "myagent" + B + ".hermes"
@@ -45,6 +49,9 @@ cases = [
     ("T17 bash -c 内 curl \"-so\" <CFG>",         "bash -c " + chr(39) + f'curl "-so" {CFG} http://x' + chr(39), "hit"),
     ("T18 curl \"-oL\" url 零误拦锁",             'curl "-oL" http://x',                            "pass"),
     ("K11 grep \"-so\" 词 门外零误拦",            f'grep "-so" {CFG}',                              "pass"),
+    # ---- round15 扩容（fix-015 改动1 靶心）：cluster 零 dash FP 两形（修前 FAIL=block）
+    ("T19 curl \"Cairo\" <CFG> FP 形(S14-1)",     f'curl "Cairo" {CFG}',                             "pass"),
+    ("T20 sort \"logo\" <CFG> d FP 形(S14-1)",    f'sort "logo" {CFG} d.txt',                        "pass"),
 ]
 nf = 0
 for label, cmd, want in cases:

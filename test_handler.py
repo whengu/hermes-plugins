@@ -1286,6 +1286,37 @@ def run_r14_fixes():
          _call("terminal", {"command": 'cp "-t' + PDIR[:6] + '"x/' + PDIR[6:] + chr(92) + "' ok.txt"}) is None)
 
 
+def run_r15_fixes():
+    """round15 修复回归（fix-015 改动1：_OUTPUT_QUOTED_RE cluster 支零 dash 误拦
+    收窄 `[-]?`→`[-]`）。FP 两形锁 PASS + 靶心两锁 hit + 零-dash 边界锁，断言值=
+    施工后实跑核对（PM 修法定演 11 形矩阵同值）。"""
+    B = chr(92)
+    CFGS = "D:/myagent/.hermes/config.yaml"   # 受保护值（斜杠形，同 TC-R14 口径）
+    def hit(c):
+        r = _call("terminal", {"command": c})
+        return _is_approve(r) or _is_block(r)
+    # FP1（S14-1）：普通引号字母词尾 o、零 dash → 不再是输出 cluster → 放行
+    _rec("TC-R15-01 FP curl \"Cairo\" <CFG> 零-dash 误拦消除 → 放行",
+         _call("terminal", {"command": 'curl "Cairo" ' + CFGS}) is None)
+    # FP2（S14-1 同根 sort 侧）：同形门外命令族第二载体 → 放行
+    _rec("TC-R15-02 FP sort \"logo\" <CFG> d 零-dash 误拦消除 → 放行",
+         _call("terminal", {"command": 'sort "logo" ' + CFGS + ' d.txt'}) is None)
+    # 靶心锁1：改动1 不得回退 cluster 尾 o 命中面（引号包 dash 必选形仍 block）
+    _rec("TC-R15-03 靶心 curl \"-so\" <CFG> cluster 尾 o 命中保持 → block",
+         _is_block(_call("terminal", {"command": 'curl "-so" ' + CFGS + ' http://x'})))
+    # 靶心锁2：引号包 -o/-O r12 锁不回退
+    _rec("TC-R15-04 靶心 curl \"-o\"/\"-O\" <CFG> r12 锁不回退 → block",
+         _is_block(_call("terminal", {"command": 'curl "-o" ' + CFGS + ' http://x'}))
+         and _is_block(_call("terminal", {"command": 'curl "-O" ' + CFGS + ' http://x'})))
+    # 新边界锁：零-dash 裸字母 `"o"` 放行与注释「单 dash 专属」名实归正（Q1 面）
+    _rec("TC-R15-05 边界 curl \"o\" <CFG> 零-dash 放行（与注释承诺名实归正）",
+         _call("terminal", {"command": 'curl "o" ' + CFGS + ' http://x'}) is None)
+    # 锁形不回退：粘连引号整包 r13-E1 + 尾非 o 负例 r14-T18
+    _rec("TC-R15-06 锁形 curl \"-o<CFG>\" r13-E1 + \"-oL\" 零误拦不回退",
+         hit('curl "-o' + "D:" + B + "myagent" + B + ".hermes" + B + "config.yaml" + '" http://x')
+         and _call("terminal", {"command": 'curl "-oL" http://x'}) is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1483,6 +1514,7 @@ run_r11_fixes()
 run_r12_fixes()
 run_r13_fixes()
 run_r14_fixes()
+run_r15_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

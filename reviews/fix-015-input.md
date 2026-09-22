@@ -14,8 +14,9 @@ ALL PASS）。准绳：requirements/requirement-20260922-boundary.md（本批=�
   机理，8dde55e 档案）。**PM 认定属实**（round14 节是我方撰写，第五次教训口径）。
 
 ## 修法定演（PM 内存猴补丁实测，11 形全符合）
-改动1（1 字符）：`_OUTPUT_QUOTED_RE` 第三交替支 `|[-]?[a-zA-Z]*[oO]` → `|- [a-zA-Z]*[oO]`
-（去 `?`，dash 必选；即 `|-[a-zA-Z]*[oO]`）。实测矩阵：
+改动1（1 字符）：第三交替支 `|[-]?[a-zA-Z]*[oO]` → **`|- [a-zA-Z]*[oO]` 去问号后的
+`|-[a-zA-Z]*[oO]`（dash 必选，无空格；替换式即 `old.replace("|[-]?[a-zA-Z]*[oO]",
+"|-[a-zA-Z]*[oO]")`，PM 已实测 pattern 锚唯一匹配）**。实测矩阵：
 - FP 消除：`curl "Cairo" CFG`=PASS、`sort "logo" CFG d`=PASS
 - 靶心保持：T11 `-so`/T12 `-sSo`/T13 `-qO`/T14 `-ro` 全 block；`"-o"`/`"-O"` r12 锁 block；
   E1 `"-o<CFG>"` block；T18 `"-oL"` PASS
