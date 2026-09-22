@@ -67,3 +67,16 @@ E1~E4 转 block；K17/K19 无回退。
 6. 不要 git commit、不要 deploy。终答 ≤200 字。
 7. 发现规格修法走不通时：**停下如实报告**，不要自行换设计（前例：round8 规格
    笔误由实现者实测纠正获认可的是行为等价修正，架构级偏离必须报告）。
+
+
+## PM 活证补充（01:4x，实现前必读）：双目标标志绑定 = PS 必然报错
+pwsh 活证：`Copy-Item -Destination A -Destination B` 报
+"Cannot bind parameter because parameter 'Destination' is specified more than once"
+且**整条不执行零写**（_zb.txt 未生成）。∴
+- Z1 `-Destination <CFG> -Destination <ws>` 现值 PASS = 语义正确（无写副作用），
+  **TC 锁 PASS，不得"顺手封堵"**；
+- Z2 `-Destination <ws> -Destination <CFG>` 现值 approve = 保守方向（对必败形弹卡
+  无害），TC 锁实测值即可，不要求改；
+- Z3 `Tee -FilePath <ws> -LiteralPath <CFG>` 现值 PASS，同 Z1 锁 PASS。
+三分句规则（"段内本 cmd 目标标志已绑定另一个值→判读"）天然导出 Z1/Z3=PASS，
+与活证一致——实现者只需验证，勿为 Z 组加特判。
