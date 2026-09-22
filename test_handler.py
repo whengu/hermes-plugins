@@ -687,6 +687,58 @@ def run_x_invariants():
     _rec("TC-X-11 无害命令放行（dispatch 显式化负例）", res is None)
 
 
+
+def run_r3_fixes():
+    """round3 复审修复回归（N-2 workdir / N-3 三引号 / N-5 调用形态 /
+    N-6 rsync / N-4 递归基准 / H-1 目录目标）。"""
+    global _new_case_count
+    S = chr(92)
+    HOME = "D:" + S + "myagent" + S + ".hermes"
+    CFG = HOME + S + "config.yaml"
+    q = chr(34)
+    tq = chr(39) * 3
+    # N-2：平台真实参数名 workdir（C 面 + A 面基准）
+    res = _call("terminal", {"command": "touch ok", "workdir": "D:" + S + "tmp"})
+    _rec("TC-R3-01 terminal workdir 指临时目录 → block（N-2/C）", _is_block(res))
+    res = _call("terminal", {"command": "echo hi > config.yaml", "workdir": "D:/myagent/.hermes"})
+    _rec("TC-R3-02 workdir=HOME + 相对重定向 → block（N-2/A）", _is_block(res))
+    res = _call("terminal", {"command": "echo hi > config.yaml", "workdir": "D:/myagent/workspace"})
+    _rec("TC-R3-03 workdir=workspace 相对写 → 放行（N-2 负例）", res is None)
+    # N-4：内嵌递归继承 cwd 基准
+    res = _call("terminal", {"command": "bash -c " + q + "echo x > config.yaml" + q,
+                             "workdir": "D:/myagent/.hermes"})
+    _rec("TC-R3-04 bash -c 相对写 + workdir → block（N-4）", _is_block(res))
+    # N-1：getstatusoutput / from-import 裸词
+    res = _call("execute_code", {"code": "import os" + chr(10) + "os.getstatusoutput('echo x > " + CFG + "')"})
+    _rec("TC-R3-05 os.getstatusoutput 写配置 → block（N-1）", _is_block(res))
+    res = _call("execute_code", {"code": "from subprocess import run" + chr(10) + "run('echo x > " + CFG + "', shell=True)"})
+    _rec("TC-R3-06 from-import 裸 run 写配置 → block（N-1）", _is_block(res))
+    res = _call("execute_code", {"code": "def run(x): return x" + chr(10) + "run('echo x > " + CFG + "')"})
+    _rec("TC-R3-07 业务函数 run() 不误拦（N-1 from-import 门）", res is None)
+    # N-3：三引号折叠
+    res = _call("execute_code", {"code": "open(" + tq + CFG + tq + ", 'w')"})
+    _rec("TC-R3-08 open(三引号) 写配置 → block（N-3）", _is_block(res))
+    res = _call("execute_code", {"code": "Path(" + tq + CFG + tq + ").write_text('x')"})
+    _rec("TC-R3-09 Path(三引号).write_text → block（N-3）", _is_block(res))
+    # N-5：位置参 / dict 形工具调用
+    res = _call("execute_code", {"code": "write_file('" + CFG + "', 'evil')"})
+    _rec("TC-R3-10 write_file 位置参 → block（N-5）", _is_block(res))
+    res = _call("execute_code", {"code": "call({'path': '" + CFG + "', 'content': 'x'})"})
+    _rec("TC-R3-11 dict 形 path 键 → block（N-5）", _is_block(res))
+    res = _call("execute_code", {"code": "cfg = {'path': 'a.md'}"})
+    _rec("TC-R3-12 无关 dict path 不误拦（N-5 负例）", res is None)
+    # N-6：rsync 复制语义
+    res = _call("terminal", {"command": "rsync a.yaml D:/myagent/.hermes/config.yaml"})
+    _rec("TC-R3-13 rsync 写受保护 → approve（N-6 复制族）", _is_approve(res))
+    res = _call("terminal", {"command": "rsync D:/myagent/.hermes/config.yaml backup/"})
+    _rec("TC-R3-14 rsync 读受保护为源 → 放行（N-6 负例）", res is None)
+    # H-1：cp 目标为 home 内子目录
+    res = _call("terminal", {"command": "cp evil.py D:/myagent/.hermes/plugins/write-guard/"})
+    _rec("TC-R3-15 cp 至插件子目录 → approve（H-1）", _is_approve(res))
+    res = _call("terminal", {"command": "cat D:/myagent/.hermes/plugins/write-guard/"})
+    _rec("TC-R3-16 cat 插件子目录 → 放行（H-1 负例）", res is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -873,6 +925,7 @@ run_c_readtools()
 run_gateway_cmd()
 run_sec_bypass()
 run_m_fixes()
+run_r3_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

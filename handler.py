@@ -181,7 +181,11 @@ def _guard_tmpdir(tool_name: str, args: dict, task_id: str = "") -> dict | None:
         arg_name, kind = mapped
         texts = [args.get(arg_name)]
         if tool_name == "terminal":
-            texts.append(args.get("cwd"))   # 安全走查 C-cwd：cwd 形态不得旁路扫描
+            # C-cwd→round3 N-2 修正：平台 terminal 真实参数名是 workdir
+            # （terminal_tool 签名实证：command/workdir/…，schema 无 cwd）。
+            # 旧修复扫 args["cwd"] 打在不存在键上=零效果的假绿。两键并收。
+            texts.append(args.get("workdir"))
+            texts.append(args.get("cwd"))
         hit = None
         for t in texts:
             if isinstance(t, str) and t:
@@ -267,17 +271,28 @@ _SHUTIL_COPY_RE = re.compile(         # shutil.copy/copyfile/copy2(源, 目标)
     r"\s*,\s*(?:[rbfuRBFU]{0,2})(['\"])(.*?)\3\s*\)", re.DOTALL)
 _OS_OPEN_RE = re.compile(             # os.open(路径, 标志)
     r"\bos\.open\s*\(\s*(?:[rbfuRBFU]{0,2})(['\"])(.*?)\1\s*", re.DOTALL)
-_TOOL_CALL_PATH_RE = re.compile(      # 代码内工具调用 write_file/patch(path=...)
-    r"\b(?:hermes_tools\.)?(?:write_file|patch)\s*\(\s*path\s*=\s*"
-    r"(?:[rbfuRBFU]{0,2})(['\"])(.*?)\1\s*", re.DOTALL)
+_TOOL_CALL_PATH_RE = re.compile(      # 代码内工具调用（N-5 三形态）：
+    # write_file(path='x') / write_file('x',…) 位置参 / "path":'x' dict 形
+    r"\b(?:hermes_tools\.)?(?:write_file|patch)\s*\(\s*(?:path\s*=\s*)?"
+    r"(?:[rbfuRBFU]{0,2})(?P<q1>['\"])(?P<p1>.*?)(?P=q1)"
+    r"|(?:'|\")path(?:'|\")\s*:\s*(?:[rbfuRBFU]{0,2})(?P<q2>['\"])(?P<p2>.*?)(?P=q2)",
+    re.DOTALL)
 _OS_WRITE_FLAGS = ("O_WRONLY", "O_RDWR", "O_CREAT", "O_APPEND", "O_TRUNC")
 # 内嵌 shell 面（安全走查 F-A2）：execute_code 里 os.system / os.popen /
 # subprocess.* 携带的 shell 命令字符串，复用 terminal 写矩阵判定。
+# 命令行单参形态（cmd=整条 shell 命令行，可直接进 terminal 判定链）：
 _OS_SYSTEM_RE = re.compile(
-    r"\bos\.(?:system|popen)\s*\(\s*(?:[rbfuRBFU]{0,2})(?P<q>['\"])(?P<cmd>.*?)(?P=q)",
-    re.DOTALL)
-_SUBPROC_CALL_RE = re.compile(
-    r"\bsubprocess\.(?:run|call|check_call|check_output|Popen|getoutput)\s*\(")
+    r"\bos\.(?:system|popen|getstatusoutput)\s*\(\s*"
+    r"(?:[rbfuRBFU]{0,2})(?P<q>['\"])(?P<cmd>.*?)(?P=q)", re.DOTALL)
+# os.spawn*/os.exec* argv 族（N-1 评估后不做）：第一参是程序路径、写目标散在
+# argv 后部，单参捕获只会半匹配（把程序名当命令行）形成假覆盖；正确判定需
+# argv 语义解析，违背"不加复杂度"。降为声明边界（CHANGELOG）。
+_SUBPROC_CALL_RE = re.compile(       # round3 N-1：subprocess. 限定形 + 裸词形两段
+    r"\b(?:subprocess\.){1}(?:run|call|check_call|check_output|Popen|getoutput)\s*\(")
+# `from subprocess import run` 后的裸 run(...)：仅当代码含该 from-import 时才扫（防误拦）
+_SUBPROC_IMPORTED_RE = re.compile(
+    r"\bfrom\s+subprocess\s+import\s+[^\n#]*\b(run|call|check_call|check_output|Popen|getoutput)\b")
+_SUBPROC_BARE_RE_TMPL = r"\b{fn}\s*\(\s*(?:\[)?\s*(?:[rbfuRBFU]{0,2})(['\"])"
 # M-1：terminal 段的内嵌 shell 载体——命令词为 shell 解释器且带 -c/-lc/-Command
 # /-command-with-args，其引号内字符串是完整 shell 命令，递归复用 terminal 判定链。
 _EMBED_SHELL_RE = re.compile(
@@ -422,8 +437,9 @@ def _hermes_home() -> str:
 
 # 受保护配置文件判定口径（用户决策 2026-09-21「范围要扩大」）：
 # HERMES_HOME 内 + （扩展名 yaml/yml/json，或文件名含 config，或 .env 系列）
-# → 受保护。skills/*.md、plugins/*.py、logs/、cache/ 等非配置文件不保护，
-# 以免把正常的技能/插件开发写入一起截断（保护范围与可用性取前者）。
+# → 受保护。skills/*.md、logs/、cache/ 等非配置文件不保护（保护范围与可用性
+# 取前者）；**例外**：plugins/ 下 .py/.yaml/.yml 受保护（F-A3 反缴械，见下方
+# _PLUGIN_CODE_EXTS——L-3 修正：原注释仍写"plugins/*.py 不保护"与代码矛盾）。
 _CONFIG_EXTS = (".yaml", ".yml", ".json")
 _CONFIG_NAMES = (".env",)
 # 反缴械（安全走查 F-A3）：plugins/ 下代码与清单同样受保护——守卫自身源码若可
@@ -528,7 +544,10 @@ _PATH_TOKEN_RE = re.compile(r'"[^"]*"|\'[^\']*\'|[^\s;&|<>()]+')
 # （设计 3.2.2），贪婪匹配会把管道后的写形态错误归因到 cd 目标。与
 # _judge_terminal 的管道先行分段构成双保险（引号内管道等残余形态亦不外溢）。
 _CD_PREFIX_RE = re.compile(r"^(?:cd|pushd)\s+(?:/d\s+)?([^|]+)$", re.IGNORECASE)
-_COPY_CMDS = ("cp", "copy", "install")
+# rsync/robocopy 与 cp 同为复制语义（末位参数=目标，复用现有分支零新逻辑，
+# N-6 保守子集）。tar -C/unzip -d/patch/ln/find -delete 需目标位语义解析或属
+# 链接/改名族，按"不加复杂度"降为声明边界（CHANGELOG round3 记录）。
+_COPY_CMDS = ("cp", "copy", "install", "rsync", "robocopy")
 _MOVE_CMDS = ("mv", "ren")
 
 # 输出参数形态（FR-02③「等」字范围）：已知带输出文件参数的下载/输出命令
@@ -593,10 +612,17 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     if cmd in _COPY_CMDS:
         path_tokens = [t for t in _PATH_TOKEN_RE.finditer(seg)]
         if path_tokens and path_tokens[-1].start() == m.start():
+            # H-1：末位参数为 home 内**目录**形态（原始 token 以分隔符结尾）→ 写目标。
+            # `cp evil.py <home>/plugins/write-guard/` 归一化后不等于任何受保护文件，
+            # 但落盘语义=目录内同名覆写（守卫源码经 terminal 单命令可缴械）。
+            if raw.rstrip("\"'").endswith(("/", chr(92))) \
+                    and norm is not None and norm.startswith(_hermes_home() + _SEP):
+                return True
             return True                   # 末位路径参数 = 复制目标
         # cp -t <dir> src…：当前路径参数是受保护目录本身（home）或其内目录，
         # 且带 -t 目标标志 → 写面（安全走查 F-A7）。
         home = _hermes_home()
+        # H-1：-t 目标可为 home 本身或 home 内任意目录（原仅 == home 太窄）
         if norm is not None and (norm == home or norm.startswith(home + _SEP)) \
                 and _COPY_T_RE.search(before):
             return True
@@ -718,7 +744,8 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
     if depth < _NEST_DEPTH_LIMIT:
         em = _EMBED_SHELL_RE.search(seg)
         if em is not None:
-            hit = _judge_terminal(em.group("body"), tool_name, depth=depth + 1)
+            hit = _judge_terminal(em.group("body"), tool_name,
+                                  depth=depth + 1, base_cwd=cwd)
             if hit is not None:
                 return hit
     protected = []
@@ -738,7 +765,10 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
         # terminal 面额外收集 HERMES_HOME 目录本身：`cp x <home>/` 的目标是
         # 目录（写入落为目录内同名文件）——写矩阵各分支只对真写形态返回
         # True，读命令（cat/grep/ls <home>/）经矩阵判定仍放行（F-A7）。
-        if _is_protected_config(norm) or norm == _hermes_home():
+        is_dir_target = (raw.rstrip("\"'").endswith(("/", chr(92)))
+                         and norm is not None
+                         and (norm == _hermes_home() or norm.startswith(_hermes_home() + _SEP)))
+        if _is_protected_config(norm) or norm == _hermes_home() or is_dir_target:
             protected.append((m, raw, norm))
     if not protected:
         return None
@@ -772,17 +802,40 @@ def _judge_execute_code(code, tool_name, base=None, depth=0):
     approve；其余写配置形态 → block（直接截断）。"""
     if not isinstance(code, str) or not code.strip():
         return None
+    # N-3：三引号字面量折叠为单引号后再判定（open(三引号x三引号) 与 open('x')
+    # 判定语义相同；一处归一替代 6 条正则各自支持三引号的复杂度）。仅影响
+    # 判定视图（本函数纯判定无副作用，不回写执行内容）。
+    _tri_dq = chr(34) * 3
+    if chr(39) * 3 in code or _tri_dq in code:
+        code = code.replace(chr(39) * 3, chr(39)).replace(_tri_dq, chr(34))
     # 内嵌 shell 面（安全走查 F-A2）：execute_code 里 os.system/popen、
     # subprocess.* 携带的 shell 命令文本，复用 terminal 判定链（含写矩阵与
     # 处置分流）——execute_code 不得成为 terminal 防线之外的旁路写入口。
     # depth 防 terminal↔execute_code 互递归爆栈（_NEST_DEPTH_LIMIT）。
     if depth < _NEST_DEPTH_LIMIT:
         for m in _OS_SYSTEM_RE.finditer(code):
-            hit = _judge_terminal(m.group("cmd"), tool_name, depth=depth + 1)
+            hit = _judge_terminal(m.group("cmd"), tool_name,
+                                  depth=depth + 1, base_cwd=base)
             if hit is not None:
                 return hit
-        for m in _SUBPROC_CALL_RE.finditer(code):
-            call_open = code.find("(", m.start())
+        # 执行点集合：subprocess.xxx(...) 限定形 + （存在 from-import 时）裸词形
+        call_sites = [(m.start(), m.end()) for m in _SUBPROC_CALL_RE.finditer(code)]
+        for im in _SUBPROC_IMPORTED_RE.finditer(code):   # N-1 from-import 门：
+            # 仅当代码确实写了 `from subprocess import run/call/...` 才扫裸词，
+            # 避免把业务函数 run()/call() 误当 subprocess。
+            for fn in im.groups():
+                    if not fn:
+                        continue
+                    bare = re.compile(
+                        r"\b" + fn + r"\s*\(", re.IGNORECASE)
+                    for bm in bare.finditer(code):
+                        # 排除 subprocess.run( 限定形（前一个词是 .）
+                        pre = code[:bm.start()].rstrip()
+                        if pre.endswith("."):
+                            continue
+                        call_sites.append((bm.start(), bm.end()))
+        for cstart, cend in call_sites:
+            call_open = code.find("(", cstart)
             if call_open == -1:
                 continue
             content = _call_content(code, call_open)
@@ -790,7 +843,8 @@ def _judge_execute_code(code, tool_name, base=None, depth=0):
             # 空格连接，cp 目标位等语义得以保留（安全走查 t2 A-B2b 教训）。
             cmd_text = " ".join(mm.group(2) for mm in _STR_LIT_RE.finditer(content))
             if cmd_text:
-                hit = _judge_terminal(cmd_text, tool_name, depth=depth + 1)
+                hit = _judge_terminal(cmd_text, tool_name,
+                                      depth=depth + 1, base_cwd=base)
                 if hit is not None:
                     return hit
     hits = []
@@ -819,7 +873,8 @@ def _judge_execute_code(code, tool_name, base=None, depth=0):
         if any(flag in content for flag in _OS_WRITE_FLAGS):
             record(m.start(), m.group(2), _normalize_path(m.group(2), base=base), "os_open")
     for m in _TOOL_CALL_PATH_RE.finditer(code):
-        record(m.start(), m.group(2), _normalize_path(m.group(2), base=base), "tool_call")
+        p = m.group("p1") if m.group("p1") is not None else m.group("p2")
+        record(m.start(), p, _normalize_path(p, base=base), "tool_call")
     if not hits:
         return None
     hits.sort(key=lambda t: t[0])                      # 代码顺序第一个命中

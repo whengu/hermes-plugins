@@ -6,6 +6,43 @@
 
 ---
 
+## 2026-09-22 round3 复审修复（deleg_87a156db 双路复审：sa-1 CRITICAL/HIGH + sa-0 N 系列）
+
+**阻断项（已修，TC-R3-01~16 回归锁定）**：
+- **C-1/N-2 CRITICAL**：round2 的 C-cwd 修复扫 `args["cwd"]`，但平台 terminal 真实
+  参数名是 `workdir`（terminal_tool 签名实证）——修复打在不存在键上=零效果假绿，
+  回归用例跟着错坐标自证通过。修正：workdir+cwd 并收；A 面以 workdir 为相对路径
+  判定基准。教训：**修坐标类缺陷必须对平台 schema 实证，测试必须用真实参数形态**。
+- **H-1 HIGH**：`cp evil.py <home>/plugins/write-guard/` 放行（F-A7 只认"目标==home
+  本身"，home 内子目录整体漏）。修正：末位参数为 home 内目录形态（原始串以分隔符
+  结尾）→ 复制目标写面，经处置分流归 approve；`cp -t <子目录>` 同步放宽。
+- **N-4**：M-1/F-A2 内嵌递归丢失 cwd 基准（顶层 block、`bash -c "echo x>config.yaml"`
+  +workdir 却放行）。三处递归调用点补 base_cwd/base 传递。
+- **N-1**：os.system 提取族补 getstatusoutput；`from subprocess import run` 裸词形态
+  加 from-import 门扫描（无该 import 不扫，防误拦业务 run()）。
+- **N-3**：三引号字面量击穿写正则——入口折叠归一（三引号折成单引号后再判定）一处
+  解决，替代 6 条正则各自支持三引号的后向引用复杂度。
+- **N-5**：代码内工具调用补位置参（write_file(CFG,'evil')）与 dict 形（'path': CFG）。
+- **N-6 保守子集**：rsync/robocopy 并入复制语义（复用末位=目标分支，零新逻辑）。
+
+**按"不加复杂度"降为声明边界（不做，理由记录）**：
+- os.spawn*/os.exec* argv 族：首参=程序路径、写目标散在 argv 后部，单参捕获只会
+  半匹配（把程序名当命令行）形成假覆盖；正确判定需 argv 语义解析。
+- tar -C/unzip -d/patch <cfg>/ln -sf/find -delete：目标位含选项语义或属链接/改名族。
+- exec/eval 字面量套壳降 approve（N-7）：共现启发式误拦成本>收益，不做。
+- tool_call(name=...) 泛化分发套壳（N-5 尾部）：等同"运行时才知道调用什么"，
+  归入变量拼接声明边界。
+- M-3 会话级 cd 跨调用跟踪（第1次 cd <home>，第2次相对写）：需按 task_id 镜像平台
+  会话 cwd 状态，引入状态管理复杂度；且 execute_code 无 workdir 参数（schema 实证，
+  sa-0 该项建议坐标不成立）。维持单命令静态判定为声明边界。
+
+**过程事故（如实记录）**：
+1. 主会话曾误报"TC-A-55 回归失败"——实测全链 None=放行，不存在回归。修复验证
+   必须跑原始场景，不能凭日志片段下结论。
+2. _r3c 脚本半途崩溃导致 handler.py 一度处于"写入但未编译"的中间态（非原子），
+   后续以行级幂等重建恢复。教训：改文件脚本必须先 compile 再落盘。
+
+测试基线：ALL PASS（29 scan + 4 hook + 192 new）。
 ## 2026-09-21 round2 复审修复（deleg_87a156db/sa-1 质量复审报告，CHANGES REQUIRED 后）
 
 | 编号 | 级别 | 缺陷（复审实测复现） | 修复 |
