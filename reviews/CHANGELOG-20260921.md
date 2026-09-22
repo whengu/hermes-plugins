@@ -57,6 +57,15 @@ requirement-20260922-boundary.md 误拦向、红线邻近「零误拦优先」�
 | 6 | python reviews/fix012-scratch/pm_verify_012.py | 25 形零 FAIL（d9/d10 等锁不回退） |
 | 7 | 红线四形（on_pre_tool_call） | gateway restart=block、cp 配置=approve、Copy-Item 源位读=PASS、-Destination CFG WS=approve（4/4） |
 
+**终审 NOTES 收线（round15-merged N-15-1/N-15-2，PM 实测背书，2026-09-23）**：
+- N-15-1 sha 算法注：本仓所有「handler sha 前16」均指 **sha256(文件原始字节, 含 CRLF
+  行尾)[:16]**（工作树/主部署/双 profile 镜像四点位口径一致；round15 终值
+  `149497733ab9e8c2` 四点位实测全等）。
+- N-15-2 接受边界补登一行：引号内尾随空白死形 `curl "-so " <CFG>` → 判定端 PASS
+  （PM 实测坐实，对照 E1 `"-so<CFG>"`=block 不回退）。引号包选项词尾随空格在 shell
+  剥引号后成为独立 argv 尾空字节，非任何粘连/cluster 语义的正常可运行形——比照
+  `-sfo=` / PS 等号形先例入「不可运行/死形不修」接受边界节点，防后续轮次重复挖勘。
+
 ## 2026-09-23 round14（安全路 F-13-S1 + 质量路 Q13-A/B 合并修复：粘连入口引号整包全族封堵，fix-014）
 
 **立项**：round13 双路同洞互证——安全路 review-013-sec F-13-S1（HIGH，`-t`/
