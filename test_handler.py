@@ -831,6 +831,46 @@ def run_r6_fixes():
     _rec("TC-R6-11 subprocess.getstatusoutput 限定形 → block（F-Q4）", _is_block(res))
 
 
+def run_r7_fixes():
+    """round7 复审修复回归（sa-0 D 卷 NL 旁路 + Q-6-1 粘连/引号选项形）。"""
+    NL, CR, BS, Q = chr(10), chr(13), chr(92), chr(34)
+    GUARD = "D:/myagent/.hermes/plugins/write-guard"
+    PGUARD = "D:/myagent/.hermes/profiles/architect/plugins/write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    # NL（round6 sa-0 D 卷 HIGH）：换行=命令分隔符必须参与分段
+    res = _call("terminal", {"command": "ls" + NL + "cp evil " + GUARD})
+    _rec("TC-R7-01 换行后 cp 守卫目录 → approve（NL 旁路封堵）", _is_approve(res))
+    res = _call("terminal", {"command": "ls" + NL + "cp evil " + PGUARD})
+    _rec("TC-R7-02 换行后 cp 镜像守卫目录 → approve（NL+D1 组合）", _is_approve(res))
+    res = _call("terminal", {"command": "ls" + NL + "truncate -s 0 " + CFG})
+    _rec("TC-R7-03 换行后 truncate 配置 → block（NL）", _is_block(res))
+    res = _call("terminal", {"command": "echo hi" + CR + NL + "cp evil " + GUARD})
+    _rec("TC-R7-04 CRLF 换行 cp 守卫目录 → approve（NL）", _is_approve(res))
+    res = _call("terminal", {"command": "cp evil " + BS + NL + GUARD})
+    _rec("TC-R7-05 反斜杠续行 cp 守卫目录 → approve（NL 粘连归一）", _is_approve(res))
+    res = _call("terminal", {"command": "ls" + NL + "cat " + GUARD + "/plugin.yaml"})
+    _rec("TC-R7-06 换行后读守卫目录文件 → 放行（NL 负例）", res is None)
+    res = _call("terminal", {"command": "ls" + NL + "echo x > D:/myagent/workspace/a.txt"})
+    _rec("TC-R7-07 换行后 workspace 写 → 放行（NL 负例）", res is None)
+    # Q-6-1：粘连短形与引号选项形
+    res = _call("terminal", {"command": "cp -t" + GUARD + " evil"})
+    _rec("TC-R7-08 cp -t<守卫目录> 粘连 → approve（Q-6-1）", _is_approve(res))
+    res = _call("terminal", {"command": "cp -t=" + GUARD + " evil"})
+    _rec("TC-R7-09 cp -t=<守卫目录> 等号粘连 → approve（Q-6-1）", _is_approve(res))
+    res = _call("terminal", {"command": "cp '-t' " + GUARD + " evil"})
+    _rec("TC-R7-10 cp '-t' 引号选项形 → approve（Q-6-1）", _is_approve(res))
+    res = _call("terminal", {"command": "cp -tr " + GUARD + " x"})
+    _rec("TC-R7-11 cp -tr GUARD x（getopt 余部=目标 r、GUARD 源位）→ 放行（负例）",
+         res is None)
+    res = _call("terminal", {"command": "cp '-t' workspace" + BS + "x workspace" + BS + "y"})
+    _rec("TC-R7-12 引号 -t 非 home 目标 → 放行（Q-6-1 负例）", res is None)
+    # Q-6-2 重构负例：字面量收敛后行为不回潮
+    res = _call("terminal", {"command": "cat " + GUARD + "/handler.py"})
+    _rec("TC-R7-13 cat 守卫 handler.py → 放行（Q-6-2 负例）", res is None)
+    res = _call("write_file", {"path": PGUARD + BS + "plugin.yaml", "content": "x"})
+    _rec("TC-R7-14 write_file 镜像 plugin.yaml → block（Q-6-2 负例保持）", _is_block(res))
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1020,6 +1060,7 @@ run_m_fixes()
 run_r3_fixes()
 run_r5_fixes()
 run_r6_fixes()
+run_r7_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

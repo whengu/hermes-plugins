@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-09-22 round7（round6 双路复审修复，deleg_7f0e4d85）
+
+**round6 复审**：sa-1 质量 CHANGES REQUIRED（轻量，Q-6-1 唯一实质缺口）；
+sa-0 安全再次撞输出上限未交卷，但落盘探针（r6_a/b/c/d）实锤一条 **HIGH：裸换行
+不参与 shell 分段 → `ls`+换行+`cp evil <guard>` 整条放行=反缴械旁路**（其
+r6_d 仿真已验证本修法零回潮）。
+
+**修复项（TC-R7-01~14 + _verify_r7 30/30 锁定）**：
+- **NL（HIGH）**：_judge_terminal 入口先把 反斜杠+换行（含 CRLF 形）粘连回一行，
+  再按换行分段（分段集加 \n、\r；引号内换行由 _split_shell 引号感知不切）。
+  D 卷全 9 攻击形封堵，读/workspace/续行/无关命令负例零回潮。
+- **Q-6-1（MED）**：GNU 合法粘连短形 `cp -t<dir>` / `-t=<dir>` 旁路（含缴械
+  场景）+ 引号选项形 `cp '-t' <dir>` ——新增 _GLUED_T_RE（cluster 在前、t 收尾、
+  余部=目标值，与 getopt 一致）提取进 norm，_COPY_T_QUOTED_RE 认引号选项；
+  -COPY_T_RE 头注释虚假声称（"与 -t= 粘连形"）改正名实。负例：-tr 目标歧义形
+  保守 approve 记录、非 home 引号 -t 放行。
+- **Q-6-2（LOW）**：_is_guard_dir_target 死支删除（round5 泛化后 b2∧¬b1=∅
+  候选集实证）；plugins/write-guard 字面量收敛 _GUARD_DIR_SEG_RE 单源。
+- **Q-6-3（LOW）**：161 字符粘连长行改规范多行；C4 注释名实补记（收 home 内
+  任意末位 token 含文件=保守方向，与 sa-1 语义分析一致）。
+- **Q-6-4（LOW 尾巴）**：mirror 失败 .tmp 残留——os.replace 语义下 .tmp 为
+  幂等暂存（重跑覆盖），失败现场残留=排障证据不自动清理；docstring 已声明
+  "文件级原子、profile 级混合版本窗口受控失败可见"。TC-E71 标题未随 E70 改名
+  ——其语义仍是 C-cwd 负例（放行方向），名实无分叉，不改。
+
+**本轮工程教训（入 memory）**：① 验证脚本内嵌攻击载荷会被自家守卫弹审批卡——
+载荷必须落盘进 _verify_*.py 文件再执行，命令行本身零载荷；② patch 工具传输层
+会把字符串里的反斜杠+r 展开成真实 CR 写进文件——含转义序列的编辑一律走
+Python 脚本 + chr() 构造，禁走 patch 参数内联。
+
+**基线**：ALL PASS 29+4+233（+14 条 TC-R7）。
 ## 2026-09-22 round6（round5 双路复审修复，deleg_aed825ca）
 
 **round5 复审**：sa-1 质量 CHANGES REQUIRED（轻量，阻断 F-Q1/F-Q2）；sa-0 安全

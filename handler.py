@@ -252,8 +252,13 @@ _SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b", re.IGNORECASE)   # F-5：SED/PERL
 _PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORECASE)
 # cp/install -t <dir> 目标标志（F-A7）：-t 后紧跟受保护目录
 _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-directory
-    r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 与 -t= 粘连形；短形簇 -rt/-at
+    r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 独立短形/词尾；短形簇 -rt/-at
     r"|(?:\s|^)--target-directory(?:\s|=|$)")   # 大写 -T 语义不同（GNU），不扩
+# Q-6-1（round7）：GNU 合法粘连短形 -t<dir> / -t=<dir>（cluster 在前、t 收尾，
+# 余部即目标值，与 getopt 语义一致）；另收引号选项形 cp"-t" 等
+# （shell 剥引号后与裸 -t 同义；字符类用 x27/x22 十六进制形避开 raw 串引号）。
+_GLUED_T_RE = re.compile(r"^-[a-zA-Z]*t=?(\S+)$")
+_COPY_T_QUOTED_RE = re.compile(r"[\x27\x22](?:-t|--target-directory)[\x27\x22]")
 _INPLACE_I_RE = re.compile(r"(?:\s|^)-p?i(?![\w-])")   # -i / -pi / -i.bak / -pi.bak
 _INPLACE_LONG_RE = re.compile(r"--in-place(?![\w-])")    # --in-place / --in-place=.bak
 _OPEN_WAX_RE = re.compile(r"[wax]")
@@ -472,7 +477,9 @@ def _is_protected_config(norm_target: str) -> bool:
     # D1（round5 sa-0）：write-guard 镜像副本（<root>/profiles/<p>/plugins/
     # write-guard/*.{py,yaml,yml}）与主部署同等反缴械权重（profile 会话实际
     # 加载者），同受保护；其它插件文件不扩面。
-    if norm_target.startswith(home + _SEP) and _GUARD_DIR_SEG_RE.search(norm_target)             and norm_target.rsplit(_SEP, 1)[-1].endswith(_PLUGIN_CODE_EXTS):
+    if (norm_target.startswith(home + _SEP)
+            and _GUARD_DIR_SEG_RE.search(norm_target)
+            and norm_target.rsplit(_SEP, 1)[-1].endswith(_PLUGIN_CODE_EXTS)):
         return True
     filename = norm_target.rsplit(_SEP, 1)[-1]
     lower = filename.lower()
@@ -617,10 +624,10 @@ def _is_guard_dir_target(norm) -> bool:
     # <root>/profiles/<p>/plugins/write-guard/ 副本——守卫目录识别不限主 home，
     # 任何 root 下的 plugins/write-guard 路径段均为反缴械目标（段边界匹配，
     # write-guard-old 等同前缀目录不误伤）。
-    if norm.startswith(_hermes_home() + _SEP) and _GUARD_DIR_SEG_RE.search(norm):
-        return True                              # 主 home 树内镜像目录
-    guard_dir = _hermes_home() + _SEP + "plugins" + _SEP + "write-guard"
-    return norm == guard_dir or norm.startswith(guard_dir + _SEP)
+    # Q-6-2（round7）：round5 泛化后主守卫目录独立分支恒不可达（候选集实证
+    # b2 且非 b1=空集：主目录本身在 home 树内被首条件覆盖）——删支，
+    # write-guard/plugins 字面量收敛 _GUARD_DIR_SEG_RE 单一来源（Q-6-4 尾项）。
+    return norm.startswith(_hermes_home() + _SEP) and _GUARD_DIR_SEG_RE.search(norm) is not None
 
 
 def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> bool:
@@ -675,7 +682,9 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
                 and (norm == home or norm.startswith(home + _SEP)
                      or _is_guard_dir_target(norm))
                 and (_COPY_T_RE.search(before)
-                     or raw.lower().startswith("--target-directory="))):
+                     or raw.lower().startswith("--target-directory=")
+                          or _GLUED_T_RE.match(raw)      # Q-6-1：本 token 即粘连目标形
+                          or _COPY_T_QUOTED_RE.search(before))):  # 引号选项形
             return True
         return False
     if cmd in _MOVE_CMDS:
@@ -744,12 +753,17 @@ def _judge_terminal(command, tool_name, depth=0, base_cwd=None):
     cwd = base_cwd or os.getcwd()
     # R-1：引号感知分段（取代裸 re.split——引号内的 ; 与 | 不是分隔符）；
     # LOW-1 语义保持：先管道级、cd 不跨管道传播
+    # NL（round6 sa-0 D 卷实锤）：换行=shell 命令分隔符，此前分段集不含换行，
+    # ls+换行+cp evil <guard> 整段不命中=反缴械旁路。修法（复审侧 r6_d 仿真
+    # 验证）：反斜杠+换行=续行粘连回一行；再按换行分段（引号内换行由
+    # _split_shell 引号感知保持不切——heredoc/引号负例/既有链零回潮）。
+    command = command.replace("\\\n", " ").replace("\\\r\n", " ")
     for pipe_seg in _split_shell(command, ("||", "|")):
         pipe_seg = pipe_seg.strip()
         if not pipe_seg:
             continue
         pipe_cwd = cwd                       # 管道两侧独立：cd 不跨管道传播
-        for seg in _split_shell(pipe_seg, ("&&", "||", ";")):
+        for seg in _split_shell(pipe_seg, ("&&", "||", ";", "\n", "\r")):
             seg = seg.strip()
             if not seg:
                 continue
@@ -811,7 +825,8 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
         elif raw.lower().startswith("--target-directory="):
             norm_raw = raw.split("=", 1)[1]   # C3：cp --target-directory=<dir> 粘连
         else:
-            norm_raw = raw
+            gm = _GLUED_T_RE.match(raw)   # Q-6-1：-t<dir> 粘连短形
+            norm_raw = gm.group(1) if gm else raw
         norm = _normalize_path(norm_raw, base=cwd)
         if norm is None:
             continue
@@ -833,6 +848,8 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             # Windows/GNU 目标为目录时可省）落盘=目录内同名覆写。收集进矩阵，
             # 由既有"末位路径参数=复制目标"分支按 approve 处置（读命令与
             # 末位非本 token 形态矩阵自会放行）。
+            # Q-6-3 名实补记：静态无法辨目录/文件属性，实收 home 内任意末位
+            # token（含普通文件）——文件末位=覆写该文件本就应审批，保守方向。
             ptoks = list(_PATH_TOKEN_RE.finditer(seg))
             if ptoks and ptoks[-1].start() == m.start():
                 is_dir_target = True
