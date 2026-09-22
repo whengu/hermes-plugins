@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-09-22 round6（round5 双路复审修复，deleg_aed825ca）
+
+**round5 复审**：sa-1 质量 CHANGES REQUIRED（轻量，阻断 F-Q1/F-Q2）；sa-0 安全
+撞输出上限未交卷，但落盘实测（r5_a 全 replay 通过、r5_b/c/d/e 探针）有实锤：
+D1/C3/C4。双路一致确认：round5 修复 9/10 到位、无行为回潮。
+
+**修复项（TC-R6-01~11 锁定）**：
+- **D1（HIGH 级）**：profile 镜像目录（<home>/profiles/<p>/plugins/write-guard/）
+  不在反缴械保护面——write_file/patch/cp 可改镜像 handler.py，profile 会话直接
+  加载被缴械副本。_is_guard_dir_target 泛化（home 树内任意 plugins/write-guard
+  段）+ _is_protected_config 镜像插件代码分支 + 收集面同步；镜像目录读仍放行。
+- **C3（MED）**：`cp --target-directory <dir>`（长形/=粘连/短形簇 -rt）旁路
+  -t 判定——_COPY_T_RE 补长形词与 `$` 分支（before 已 rstrip，词尾=串尾），
+  `=` 粘连目标 token 提取 + 分支认 raw 前缀；cp -T（GNU 不建目录）不误扩。
+- **C4**：复制族末位=home 内目录（无尾分隔符，Windows 合法省略）与带斜杠形
+  名实分叉（前者 PASS 后者 approve）——收集面把 home 内末位目录 token 送矩阵，
+  统一 approve；mv（改名族 OOS-09）与读命令仍放行。
+- **F-Q1（MED 文档名实）**：robocopy 撤出登记的"仍有绝对路径 token+矩阵分支
+  兜底"承诺句实测不成立（robocopy 写配置零兜底）——改写为如实的零覆盖声明
+  边界；TC-R5-15 锁 PASS 语义不变。
+- **F-Q2（MED deploy）**：mirror_to_profiles 失败路径裸抛/半写/误报"已镜像"——
+  逐文件 .tmp→os.replace 原子换入，OSError 受控捕获，失败不打印成功。
+- **F-Q4（LOW）**：`subprocess.getstatusoutput(...)` 限定形漏一词（from-import
+  形与 os. 限定形均有）——_SUBPROC_CALL_RE 名单补齐。
+- **微疵**：F-2 恒死兜底支删除；L553 陈旧注释合并；TC-E70 标题改为
+  "幻觉 cwd=F-6 防御纵深超集"（F-Q6a，原"C-cwd"名不副实）。
+
+**登记补记（F-Q3/Q5/Q6，接受边界不修）**：
+- F-Q3：star-import 后用户 `def run()` 覆写仍按 subprocess 语义扫（名字可能
+  被重绑、静态不可知，fail-closed 同 F-8 族）——接受。
+- F-Q5：`~` 展开=真实家目录（本机 C:\Users\guwh），`cp evil ~/x` 型跨家形态
+  不命中单根归一化=设计后果非漏洞；xcopy 目标位语义（目录强制/文件问询）
+  需专属解析——降声明边界（同 robocopy 论据）。
+- M-3 会话级 cd 漂移（R4-6）：插件判定基准=进程 cwd，平台会话 cd 记录漂移时
+  有落差——维持接受边界（常态一致）。
+- F-Q6 余项（R4-3 dict 形读参数假阳性、tar 行理由扩写）并入本条：
+  dict 形写工具参数按写处置=保守方向；tar/ln 落点绕过与改名族（L4/OOS-09）
+  同源不扩——维持登记。
+- sa-0 撞输出上限教训：round6 派单要求"结论先写、报告落盘、终答复述"。
+
+**基线**：ALL PASS 29+4+219（+11 条 TC-R6）。
 ## 2026-09-22 round5（round4 双路复审修复，deleg_6dc70025）
 
 **round4 复审**：sa-0 安全 CHANGES REQUIRED（F-1~F-8 + OBS-1/2）；sa-1 质量

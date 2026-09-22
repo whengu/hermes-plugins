@@ -251,7 +251,9 @@ _SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b", re.IGNORECASE)   # F-5：SED/PERL
 # PowerShell 写 cmdlet（安全走查 F-A6）：受保护路径出现在其之后即写目标
 _PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORECASE)
 # cp/install -t <dir> 目标标志（F-A7）：-t 后紧跟受保护目录
-_COPY_T_RE = re.compile(r"(?:\s|^)-t(?:\s|$)")
+_COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-directory
+    r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 与 -t= 粘连形；短形簇 -rt/-at
+    r"|(?:\s|^)--target-directory(?:\s|=|$)")   # 大写 -T 语义不同（GNU），不扩
 _INPLACE_I_RE = re.compile(r"(?:\s|^)-p?i(?![\w-])")   # -i / -pi / -i.bak / -pi.bak
 _INPLACE_LONG_RE = re.compile(r"--in-place(?![\w-])")    # --in-place / --in-place=.bak
 _OPEN_WAX_RE = re.compile(r"[wax]")
@@ -290,7 +292,8 @@ _OS_SYSTEM_RE = re.compile(
 # argv 后部，单参捕获只会半匹配（把程序名当命令行）形成假覆盖；正确判定需
 # argv 语义解析，违背"不加复杂度"。降为声明边界（CHANGELOG）。
 _SUBPROC_CALL_RE = re.compile(       # round3 N-1：subprocess. 限定形 + 裸词形两段
-    r"\b(?:subprocess\.){1}(?:run|call|check_call|check_output|Popen|getoutput)\s*\(")
+    r"\b(?:subprocess\.){1}(?:run|call|check_call|check_output"
+    r"|Popen|getoutput|getstatusoutput)\s*\(")
 # `from subprocess import run` 后的裸 run(...)：仅当代码含该 from-import 时才扫（防误拦）
 # round4 F-3：门覆盖 from-import 的别名（run as r）/ 多行括号 / star（import *）
 # 三形态，另收 `import subprocess as sp` 模块别名（组3→限定形按别名重建）。
@@ -466,6 +469,11 @@ def _is_protected_config(norm_target: str) -> bool:
     if norm_target.startswith((home + _SEP + "plugins") + _SEP) \
             and norm_target.rsplit(_SEP, 1)[-1].endswith(_PLUGIN_CODE_EXTS):
         return True                              # 插件代码/清单（F-A3 反缴械）
+    # D1（round5 sa-0）：write-guard 镜像副本（<root>/profiles/<p>/plugins/
+    # write-guard/*.{py,yaml,yml}）与主部署同等反缴械权重（profile 会话实际
+    # 加载者），同受保护；其它插件文件不扩面。
+    if norm_target.startswith(home + _SEP) and _GUARD_DIR_SEG_RE.search(norm_target)             and norm_target.rsplit(_SEP, 1)[-1].endswith(_PLUGIN_CODE_EXTS):
+        return True
     filename = norm_target.rsplit(_SEP, 1)[-1]
     lower = filename.lower()
     if lower.endswith(_CONFIG_EXTS):
@@ -550,13 +558,15 @@ _PATH_TOKEN_RE = re.compile(r'"[^"]*"|\'[^\']*\'|[^\s;&|<>()]+')
 # （设计 3.2.2），贪婪匹配会把管道后的写形态错误归因到 cd 目标。与
 # _judge_terminal 的管道先行分段构成双保险（引号内管道等残余形态亦不外溢）。
 _CD_PREFIX_RE = re.compile(r"^(?:cd|pushd)\s+(?:/d\s+)?([^|]+)$", re.IGNORECASE)
-# rsync/robocopy 与 cp 同为复制语义（末位参数=目标，复用现有分支零新逻辑，
-# N-6 保守子集）。tar -C/unzip -d/patch/ln/find -delete 需目标位语义解析或属
+# rsync 与 cp 同为复制语义（末位参数=目标，复用现有分支零新逻辑，N-6）。
+# tar -C/unzip -d/patch/ln/find -delete 需目标位语义解析或属
 # 链接/改名族，按"不加复杂度"降为声明边界（CHANGELOG round3 记录）。
 # 不含 robocopy（round4 F-4/R4-5）：robocopy 参数序是 src <dir> <file>——目标在
 # 第 2 参、末位是文件名，cp 式"末位=目标"判定套不上，并入只会形成半匹配假覆盖
 # （实测三参定向覆写漏拦）。正确处理需 robocopy 专属位参解析，违背"不加复杂度"
-# → 降为声明边界（CHANGELOG）；其写配置行为仍被绝对路径 token + 其余矩阵分支兜底。
+# → 降为声明边界（CHANGELOG）。注意：robocopy 写配置当前零兜底（不在复制族、
+# 末位是文件名非目录，其余矩阵分支均不命中，round5 sa-1 F-Q1 实测），与其说
+# "有兜底"不如如实登记为零覆盖边界。
 _COPY_CMDS = ("cp", "copy", "install", "rsync")
 _MOVE_CMDS = ("mv", "ren")
 
@@ -591,6 +601,10 @@ def _command_word(seg: str):
     return m.group(1).strip("'\"").lower()
 
 
+_GUARD_DIR_SEG_RE = re.compile(
+    r"(?:^|/)" + "plugins" + "/" + "write-guard" + r"(/|$)")
+
+
 def _is_guard_dir_target(norm) -> bool:
     """F-1（round4，HIGH）：norm 指向守卫插件自身目录（…/plugins/write-guard）。
     Windows 语义下 cp 目标是目录时可不带尾分隔符（`cp evil D:\\...\\write-guard`
@@ -599,6 +613,12 @@ def _is_guard_dir_target(norm) -> bool:
     缴械全部保护，此处宁拦勿漏（该目录作为复制末位目标无合法写场景）。"""
     if norm is None:
         return False
+    # D1（round5 sa-0）：OBS-1 镜像后 profile 会话加载
+    # <root>/profiles/<p>/plugins/write-guard/ 副本——守卫目录识别不限主 home，
+    # 任何 root 下的 plugins/write-guard 路径段均为反缴械目标（段边界匹配，
+    # write-guard-old 等同前缀目录不误伤）。
+    if norm.startswith(_hermes_home() + _SEP) and _GUARD_DIR_SEG_RE.search(norm):
+        return True                              # 主 home 树内镜像目录
     guard_dir = _hermes_home() + _SEP + "plugins" + _SEP + "write-guard"
     return norm == guard_dir or norm.startswith(guard_dir + _SEP)
 
@@ -651,11 +671,11 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
         # F-1：-t 目标同样接受守卫目录无分隔符形态
         # R4-1（round4）：仅 cp/install 的 -t 是"目标目录"标志；rsync 的 -t 是
         # preserve-times（选项语义不同），按 cp 套用过拦纯读形态 rsync -t <CFG> dest/。
-        if cmd in ("cp", "install") \
-                and norm is not None \
+        if (cmd in ("cp", "install") and norm is not None
                 and (norm == home or norm.startswith(home + _SEP)
-                     or _is_guard_dir_target(norm)) \
-                and _COPY_T_RE.search(before):
+                     or _is_guard_dir_target(norm))
+                and (_COPY_T_RE.search(before)
+                     or raw.lower().startswith("--target-directory="))):
             return True
         return False
     if cmd in _MOVE_CMDS:
@@ -788,6 +808,8 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             norm_raw = eq_m.group(1)
         elif raw.lower().startswith("of="):
             norm_raw = raw[3:]
+        elif raw.lower().startswith("--target-directory="):
+            norm_raw = raw.split("=", 1)[1]   # C3：cp --target-directory=<dir> 粘连
         else:
             norm_raw = raw
         norm = _normalize_path(norm_raw, base=cwd)
@@ -803,6 +825,17 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
         # 读命令（cat/ls 该目录）由矩阵按读语义放行，不受收集面影响。
         if not is_dir_target and _is_guard_dir_target(norm):
             is_dir_target = True
+        if not is_dir_target \
+                and norm.startswith(_hermes_home() + _SEP) \
+                and norm != _hermes_home() \
+                and _command_word(seg) in _COPY_CMDS:
+            # C4（round5 sa-0）：cp x <home>/profiles/developer（无尾分隔符，
+            # Windows/GNU 目标为目录时可省）落盘=目录内同名覆写。收集进矩阵，
+            # 由既有"末位路径参数=复制目标"分支按 approve 处置（读命令与
+            # 末位非本 token 形态矩阵自会放行）。
+            ptoks = list(_PATH_TOKEN_RE.finditer(seg))
+            if ptoks and ptoks[-1].start() == m.start():
+                is_dir_target = True
         if _is_protected_config(norm) or norm == _hermes_home() or is_dir_target:
             protected.append((m, raw, norm))
     if not protected:
@@ -965,7 +998,7 @@ def _guard_hermes_config(tool_name: str, args: dict, task_id: str = "") -> dict 
         wd = args.get("workdir")
         base = None
         if isinstance(wd, str) and wd.strip():
-            base = _normalize_path(wd) or (wd if isinstance(wd, str) else None)
+            base = _normalize_path(wd)
         return _judge_terminal(text, tool_name, base_cwd=base)
     if tool_name == "execute_code":
         return _judge_execute_code(text, tool_name)

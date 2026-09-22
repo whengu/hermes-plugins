@@ -589,7 +589,8 @@ def run_sec_bypass():
 
     # C-cwd：terminal cwd 参数不得旁路临时目录扫描
     res = _call("terminal", {"command": "ls", "cwd": "/" + "tmp"})
-    _rec("TC-E70 terminal cwd 指向系统临时目录 → block（C-cwd）", _is_block(res))
+    _rec("TC-E70 terminal 幻觉 cwd 指临时目录 → block（F-6 防御纵深超集）",
+         _is_block(res))
     res = _call("terminal", {"command": "ls", "cwd": "D:/myagent/workspace"})
     _rec("TC-E71 terminal cwd 工作区 → 放行（C-cwd 负例）", res is None)
 
@@ -795,6 +796,41 @@ def run_r5_fixes():
     _rec("TC-R5-16 args=None 不抛异常按空参放行（F-7）", res is None)
 
 
+def run_r6_fixes():
+    """round6 复审修复回归（sa-0 D1/C3/C4 + sa-1 F-Q4）。"""
+    GUARD = "D:/myagent/.hermes/plugins/write-guard"
+    PGUARD = "D:/myagent/.hermes/profiles/architect/plugins/write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    # D1：profile 镜像守卫目录纳入反缴械保护面
+    res = _call("write_file", {"path": PGUARD + "/handler.py", "content": "x"})
+    _rec("TC-R6-01 write_file 镜像目录 handler.py → block（D1）", _is_block(res))
+    res = _call("write_file", {"path": PGUARD + "/plugin.yaml", "content": "x"})
+    _rec("TC-R6-02 write_file 镜像目录 plugin.yaml → block（D1）", _is_block(res))
+    res = _call("terminal", {"command": "cp evil.py " + PGUARD})
+    _rec("TC-R6-03 cp 镜像守卫目录无斜杠 → approve（D1）", _is_approve(res))
+    res = _call("terminal", {"command": "cat " + PGUARD + "/plugin.yaml"})
+    _rec("TC-R6-04 cat 镜像目录文件 → 放行（D1 负例）", res is None)
+    # C3：--target-directory 长形/=粘连/短形簇
+    res = _call("terminal", {"command": "cp --target-directory " + GUARD + " x.txt"})
+    _rec("TC-R6-05 cp --target-directory 守卫目录 → approve（C3）", _is_approve(res))
+    res = _call("terminal", {"command": "cp --target-directory=" + GUARD + " x.txt"})
+    _rec("TC-R6-06 cp --target-directory=粘连 → approve（C3）", _is_approve(res))
+    res = _call("terminal", {"command": "cp -T " + GUARD + " x.txt"})
+    _rec("TC-R6-07 cp -T（非目标标志）守卫目录在源位 → 放行（C3 负例不误扩）",
+         res is None)
+    # C4：home 内目录无尾分隔符末位（与带斜杠名实一致）
+    res = _call("terminal", {"command": "cp x.yaml D:/myagent/.hermes/profiles/developer"})
+    _rec("TC-R6-08 cp 末位=home 内目录无斜杠 → approve（C4）", _is_approve(res))
+    res = _call("terminal", {"command": "cat D:/myagent/.hermes/profiles/developer"})
+    _rec("TC-R6-09 cat home 内目录 → 放行（C4 负例）", res is None)
+    res = _call("terminal", {"command": "mv x D:/myagent/.hermes/profiles/developer"})
+    _rec("TC-R6-10 mv 同形 → 放行（C4 负例：改名族不拦）", res is None)
+    # F-Q4：subprocess.getstatusoutput 限定形
+    res = _call("execute_code", {"code": "import subprocess\n"
+                        "subprocess.getstatusoutput('echo x > " + CFG + "')"})
+    _rec("TC-R6-11 subprocess.getstatusoutput 限定形 → block（F-Q4）", _is_block(res))
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -983,6 +1019,7 @@ run_sec_bypass()
 run_m_fixes()
 run_r3_fixes()
 run_r5_fixes()
+run_r6_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

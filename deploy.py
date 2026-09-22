@@ -11,6 +11,7 @@ plugin.yaml 只注册 handler 的 hook；测试文件留在 workspace 运行）�
 """
 
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -100,9 +101,11 @@ def main(argv) -> int:
 def mirror_to_profiles(dst: Path) -> int | None:
     """把主部署目录的 FILES 镜像到同级 profiles/*/plugins/write-guard/。
 
-    返回同步的 profile 数；任一镜像哈希校验失败返回 None（→ main 返回 1）。
+    返回同步的 profile 数；任一镜像异常/哈希校验失败返回 None（→ main 返回 1）。
     仅同步「已存在 write-guard 目录」的 profile；目录不存在=该 profile 未安装
-    本插件，保持不动。"""
+    本插件，保持不动。失败路径纪律（round5 F-Q2）：逐文件先拷 *.tmp 再
+    os.replace 原子换入（目标只读/权限异常不外抛，受控捕获）；任一步失败=该
+    profile 记败、不打印"已镜像"。"""
     profiles_root = dst.parent.parent / "profiles"      # <home>/plugins/write-guard → <home>/profiles
     if not profiles_root.is_dir():
         print("  无 profiles 目录，跳过镜像")
@@ -113,17 +116,24 @@ def mirror_to_profiles(dst: Path) -> int | None:
         if not target.is_dir():
             continue
         ok = True
-        for f in FILES:
-            src_file = dst / f                          # 以主部署（刚校验过）为源
-            shutil.copy2(src_file, target / f)
-            if _sha(target / f) != _sha(src_file):
-                print(f"  FAIL profile[{pd.name}] {f} 镜像校验不一致")
-                ok = False
+        try:
+            for f in FILES:
+                src_file = dst / f                      # 以主部署（刚校验过）为源
+                tmp = target / (f + ".tmp")
+                shutil.copy2(src_file, tmp)
+                if _sha(tmp) != _sha(src_file):
+                    print(f"  FAIL profile[{pd.name}] {f} 镜像校验不一致")
+                    ok = False
+                    break
+                os.replace(tmp, target / f)             # 原子换入，不留半写
+        except OSError as exc:
+            print(f"  FAIL profile[{pd.name}] 镜像异常: {exc}")
+            ok = False
         pc = target / "__pycache__"
-        if pc.is_dir():
+        if ok and pc.is_dir():
             shutil.rmtree(pc)
-        print(f"  已镜像 profile[{pd.name}]")
         if ok:
+            print(f"  已镜像 profile[{pd.name}]")
             count += 1
         else:
             return None
