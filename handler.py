@@ -262,22 +262,36 @@ _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-dir
     r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 独立短形/词尾；短形簇 -rt/-at
     r"|(?:\s|^)--target-directory(?:\s|=|$)")   # 大写 -T 语义不同（GNU），不扩
 # F-10-1（round11）：PS 复制族命名目标标志（比照 _COPY_T_RE 前置判据同款）。
-# _PS_NAMED_TARGET_RE 尾锚=本 token 紧随标志即其绑定值；_PS_NAMED_ANY_RE=段内
-# 出现过该族标志（末位启发否决依据，`-Destination 非保护 CFG` 源位不再误弹）。
-# F-11-3/Q-11-1（round12）：TARGET 词表收窄为目标词两词（PS 语义：Copy-Item 目标
-# 仅 Destination、Tee-Object 仅 FilePath；Path/LiteralPath/Container 恒为源参或非
-# 该族目标词）——ANY_RE 五词表不动（末位否决仍需源参在场信号）。
-_PS_NAMED_TARGET_RE = re.compile(
-    r"-(?:Destination|FilePath)\s*$", re.IGNORECASE)
+# _PS_NAMED_ANY_RE=段内出现过该族标志（末位启发否决依据，`-Destination 非保护 CFG`
+# 源位不再误弹）；五词表不动（规格 A4：named 前置条件保持全局在场检测）。
+# F-11-3/Q-11-1（round12）：TARGET 词表收窄为目标词两词。
+# F-12-1/F-12-2（round13）：全局 TARGET 词表压平了 per-cmd 语义（pwsh 活证：
+# Tee-Object 的 -LiteralPath 是 -FilePath 指定集成员=输出目标，与 Copy-Item 的
+# -LiteralPath=源参语义相反）——目标词表改按 cmd 分表，禁全局并集。
 _PS_NAMED_ANY_RE = re.compile(
     r"-(?:Destination|FilePath|Path|Container|LiteralPath)\b", re.IGNORECASE)
+_PS_TARGET_FLAGS = {"copy-item": r"Destination",
+                    "tee-object": r"FilePath|LiteralPath"}
+# 尾锚=本 token 紧随本 cmd 目标标志即其绑定值；bind 形=段内该标志已绑定值（含
+# 冒号/=形，等号形 pwsh 活证拒绝→仅作"已绑另一值"否决信号，不当绑定命中）。
+_PS_TAIL_ANCHOR_RES = {c: re.compile(r"-(?:%s)\s*$" % w, re.IGNORECASE)
+                       for c, w in _PS_TARGET_FLAGS.items()}
+_PS_TGT_BIND_RES = {c: re.compile(r"-(?:%s)(?:\s|[:=])" % w, re.IGNORECASE)
+                    for c, w in _PS_TARGET_FLAGS.items()}
+# F-11-1（round12）冒号粘连按 cmd 分表（round13 参数化 _GLUED_NAMED_RE）：
+# `-Destination:<值>`/`-LiteralPath:<值>`（含引号值）；等号形活证拒绝=附录不修。
+_PS_GLUED_NAMED_RES = {c: re.compile(r"^-(?:%s):(['\"]?)(\S+?)\1$" % w, re.IGNORECASE)
+                       for c, w in _PS_TARGET_FLAGS.items()}
+# F-12-3（round13）：成对外层引号（匹配输入剥一处专用，禁入 token 化——F-7-2）
+_PAIR_QUOTE_RE = re.compile(r"^(['\"])(.*)\1$")
 # Q-6-1（round7）：GNU 合法粘连短形 -t<dir> / -t=<dir>（cluster 在前、t 收尾，
 # 余部即目标值，与 getopt 语义一致）；另收引号选项形 cp"-t" 等
 # （shell 剥引号后与裸 -t 同义；字符类用 x27/x22 十六进制形避开 raw 串引号）。
 _GLUED_T_RE = re.compile(r"^-[a-zA-Z]*t=?(\S+)$")
 # F-11-1（round12）：PS 冒号粘连 `-Destination:<值>`/`-FilePath:<值>`（含引号值；
 # 等号形/全词粘连 pwsh 活证拒绝=附录不修）。提取值段进 norm，判定走命名支语义。
-_GLUED_NAMED_RE = re.compile(r"^-(?:Destination|FilePath):(['\"]?)(\S+?)\1$", re.IGNORECASE)
+# F-12-1/2（round13）：全局两词表压平 per-cmd 语义（Tee 目标含 LiteralPath），
+# 由 _PS_GLUED_NAMED_RES 按 cmd 分表接管，旧全局形删除。
 # S-1（round9 fix-009）：-o<file>/-O<file> 粘连提取（=形已有 _OUTPUT_FLAG_EQ_RE；--output 长形双 dash 开头不匹配本形）
 # F-9-3（round10）：字符类 ^- → ^[-/]，收 cmd 原生 sort /O<file> 粘连方言
 _GLUED_O_RE = re.compile(r"^[-/][a-zA-Z]*[oO](?!=)(\S+)$")
@@ -638,6 +652,13 @@ def _command_word(seg: str):
     return toks[0].lower() if toks else None
 
 
+def _pair_unquote(s: str) -> str:
+    """F-12-3（round13）：剥**成对**外层引号一处——仅匹配输入（_GLUED_O_RE 等
+    选项粘连判定）；token 化与 norm 链不经过此处（F-7-2 通用剥离禁令不回潮）。"""
+    qm = _PAIR_QUOTE_RE.match(s)
+    return qm.group(2) if qm else s
+
+
 def _strip_wrapper_prefix(seg: str) -> str:
     """F-9-2（round10）：复用 _command_word 剔除链（wrapper 词/环境赋值/前导选项），
     但返回剔除后的**剩余文本**（无剔除则原样）——供载体正则先于原文尝试匹配，
@@ -700,7 +721,10 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
         # 后与裸 -o 同义；比照 _COPY_T_QUOTED_RE 先例，不做通用引号剥离）
         if (_OUTPUT_FLAG_RE.search(before)
                 or _OUTPUT_FLAG_EQ_RE.match(raw)
-                or _GLUED_O_RE.match(raw)              # S-1：-o<file> 粘连形
+                # F-12-3（round13）：匹配输入剥成对引号一处（`curl "-o<CFG>"` 与
+                # 裸形同义；整支有 _OUTPUT_FLAG_CMDS_RE 门=仅 curl/wget/sort，零
+                # 扰动复制族；token 化/norm 链不经过此——F-7-2 禁令）
+                or _GLUED_O_RE.match(_pair_unquote(raw))   # S-1：-o<file> 粘连形
                 or _OUTPUT_QUOTED_RE.search(before)):  # F-11-2：引号选项词形
             return True
     # 原位编辑 sed -i / perl -pi → 写
@@ -710,20 +734,31 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     # 复制类：受保护路径为命令中最后一个路径参数 → 目标写；为源 → 读
     cmd = _command_word(seg)
     if cmd in _COPY_CMDS:
-        # F-10-1（round11）：PS 复制族命名目标支（比照 -t 支同款前置判据）。norm
-        # 受保护面由上游收集门把守。前置绑定命中→判写（封堵 `-Destination <CFG>
-        # 非保护`）；段内含命名标志即否决末位启发（归正反向误弹，CFG 源位必
-        # PASS）；标志后随另一命名标志（`-Container <CFG> -Destination 非保护`，
-        # r10 锁形 B）目标另有其主→本 token 仍按源位放行。
+        # F-10-1（round11 建支，F-12-1/2 round13 三分句重构）：PS 复制族命名目标
+        # 判定，全部按**本 cmd 目标标志绑定**（_PS_TARGET_FLAGS 分表，禁全局并集）：
+        # 句1 本 token 判写 = before 尾锚本 cmd 目标标志 或 raw=冒号绑定本 token 为
+        #   目标值，且段内该族标志未绑定**另一个**值（前随/后随段无第二次绑定）；
+        # 句2 本 token 判读 = 段内本 cmd 目标标志已绑另一值 → PASS 且否决末位启发
+        #   （X1~4 的 -Path/-Container/-LiteralPath 源参不接管目标；Z1/Z3 双绑必败
+        #   形 pwsh 活证零写，规则天然导出，无特判——r10 B 锁形 K2 同此）。
+        # 句3 段内本 cmd 无目标标志绑定 = 走末位启发（POSIX 位置参形，子句 3 同步
+        #   per-cmd 目标尾锚语义——规格 A3：标志绑定的是别人时 before 非本尾锚）。
+        # _PS_NAMED_ANY_RE 五词表仅作"命名标志在场"前置（规格 A4，不动）。
         named = cmd in ("copy-item", "tee-object") and _PS_NAMED_ANY_RE.search(seg)
-        # F-11-1（round12）：or 支=本 token 即冒号粘连绑定值（-Destination:<CFG>）。
-        if named and (_PS_NAMED_TARGET_RE.search(before)
-                      or _GLUED_NAMED_RE.match(raw)) \
-                and not _PS_NAMED_ANY_RE.search(seg[m.end():]):
+        anch = _PS_TAIL_ANCHOR_RES.get(cmd)
+        bind = _PS_TGT_BIND_RES.get(cmd)
+        gl = _PS_GLUED_NAMED_RES.get(cmd)
+        own = anch.search(before) if anch else None
+        own_gl = bool(gl.match(raw)) if gl else False
+        if named and (own or own_gl) \
+                and not bind.search(seg[:own.start()] if own else seg[:m.start()]) \
+                and not bind.search(seg[m.end():]):
             return True
         path_tokens = [t for t in _PATH_TOKEN_RE.finditer(seg)]
         if path_tokens and path_tokens[-1].start() == m.start() \
-                and (not named or _PS_NAMED_TARGET_RE.search(before)):
+                and (not named or (own
+                        and not bind.search(seg[:own.start()])
+                        and not bind.search(seg[m.end():]))):
             # H-1：末位参数为 home 内**目录**形态（原始 token 以分隔符结尾）→ 写目标。
             # `cp evil.py <home>/plugins/write-guard/` 归一化后不等于任何受保护文件，
             # 但落盘语义=目录内同名覆写（守卫源码经 terminal 单命令可缴械）。
@@ -945,8 +980,17 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             # 前一 token；判定仍由 -t 分支 _COPY_T_QUOTED_RE 门把关，保守收集）。
             norm_raw = raw[1:]
         else:
-            gm = _GLUED_T_RE.match(raw) or _GLUED_O_RE.match(raw)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
-            gn = _GLUED_NAMED_RE.match(raw)   # F-11-1（round12）：冒号粘连值段（引号优先于 t/o 误提取）
+            # F-12-3（round13）：_GLUED_O_RE 匹配输入剥**成对**外层引号一处（比照
+            # _GLUED_T_RE 引号先例语义）——引号吞选项粘连值形 `curl "-so<CFG>"` 与
+            # 裸形同义（shell 剥引号实证）；token 化与 norm 链不经过此（F-7-2 禁令）。
+            # 复制族 cmd 不启用：-o 非其选项语义，零扰动。
+            cmdw = _command_word(seg)
+            _ou = raw if cmdw in _COPY_CMDS else _pair_unquote(raw)
+            gm = _GLUED_T_RE.match(raw) or _GLUED_O_RE.match(_ou)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
+            # F-11-1（round12）建支，round13 per-cmd 化：冒号粘连值段按本 cmd 目标
+            # 词表匹配（引号优先于 t/o 误提取）——非本 cmd 目标族标志不提取。
+            gn = _PS_GLUED_NAMED_RES.get(cmdw)
+            gn = gn.match(raw) if gn else None
             norm_raw = gn.group(2) if gn else (gm.group(1) if gm else raw)
         norm = _normalize_path(norm_raw, base=cwd)
         if norm is None:

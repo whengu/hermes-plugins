@@ -1171,6 +1171,63 @@ def run_r12_fixes():
     _rec("TC-R12-20 锁形零回退 粘连链/F-9-3 /O/Set-Content 不回潮", ok)
 
 
+def run_r13_fixes():
+    """round13 修复回归（F-12-1/2 per-cmd 目标表三分句 + F-12-3 引号粘连选项值）。"""
+    B = chr(92)
+    HD = "D:" + B + "myagent" + B + ".hermes" + B + "plugins" + B + "write-guard" + B + "handler.py"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    WS = "D:/myagent/workspace/x.txt"
+    def hit(c):
+        r = _call("terminal", {"command": c})
+        return _is_approve(r) or _is_block(r)
+    # F-12-1/X 组：真目标先绑 + 源参标志后随（-Path/-LiteralPath/-Container 不接管）
+    _rec("TC-R13-01 X1 -Destination CFG -Path ws → 封堵命中",
+         hit("Copy-Item -Destination " + CFG + " -Path " + WS))
+    _rec("TC-R13-02 X2 -Destination CFG -LiteralPath ws → 命中（禁全局并集误否决）",
+         hit("Copy-Item -Destination " + CFG + " -LiteralPath " + WS))
+    _rec("TC-R13-03 X3 冒号绑定真目标 + 源参后随 → 封堵命中",
+         hit("Copy-Item -Destination:" + CFG + " -Path " + WS))
+    _rec("TC-R13-04 X4 -Destination CFG -Container ws → 封堵命中",
+         hit("Copy-Item -Destination " + CFG + " -Container " + WS))
+    # F-12-2/T 组：Tee 目标含 LiteralPath（pwsh 活证 per-cmd 语义）
+    _rec("TC-R13-05 T1 Tee -LiteralPath CFG → 封堵命中",
+         hit("Tee-Object -LiteralPath " + CFG))
+    _rec("TC-R13-06 T2 Tee -LiteralPath:CFG 冒号形 → 封堵命中",
+         hit("Tee-Object -LiteralPath:" + CFG))
+    _rec("TC-R13-07 T3 Tee -InputObject x -LiteralPath CFG → 封堵命中",
+         hit("Tee-Object -InputObject x -LiteralPath " + CFG))
+    # F-12-3/E 组：引号吞「选项+粘连值」剥成对引号一处
+    _rec("TC-R13-08 E1 curl \"-so<CFG>\" → block",
+         _is_block(_call("terminal", {"command": 'curl "-so' + CFG + '" http://x'})))
+    _rec("TC-R13-09 E2 curl '-o<CFG>' 单引号 → block",
+         _is_block(_call("terminal", {"command": "curl '-o" + CFG + "' http://x"})))
+    _rec("TC-R13-10 E3 curl \"-o<CFG>\" 双引号 → block",
+         _is_block(_call("terminal", {"command": 'curl "-o' + CFG + '" http://x'})))
+    _rec("TC-R13-11 E4 curl \"-o<守卫源码>\" → block（反缴械面）",
+         _is_block(_call("terminal", {"command": 'curl "-o' + HD + '" http://x'})))
+    # 锁形代表（新支交叉面）：K2/K4 判读 PASS、r11 m 反向位置参
+    _rec("TC-R13-12 K2 -Container CFG -Destination ws 保持 PASS（r10 B 锁）",
+         _call("terminal", {"command": "Copy-Item -Container " + CFG + " -Destination " + WS}) is None)
+    _rec("TC-R13-13 K4 -Destination ws -Path CFG 保持 PASS（r12 c1 锁）",
+         _call("terminal", {"command": "Copy-Item -Destination " + WS + " -Path " + CFG}) is None)
+    _rec("TC-R13-14 r11m -Destination ws <CFG尾位> 保持 PASS（前随目标绑定→判读）",
+         _call("terminal", {"command": "Copy-Item -Destination " + WS + " " + CFG}) is None)
+    _rec("TC-R13-15 K13/K14 改动B 锁形：门外 grep 与 -O URL 红线保持 PASS",
+         _call("terminal", {"command": 'grep "-o" ' + CFG}) is None
+         and _call("terminal", {"command": "curl -O http://x/a.zip"}) is None)
+    # Z 组按 PM 活证补充锁实测值（双绑=PS 绑定错误整条零写，三分句天然导出，无特判）
+    _rec("TC-R13-16 Z1/Z2/Z3 双目标绑定必败形 锁实测值 PASS（活证零写，禁特判）",
+         _call("terminal", {"command": "Copy-Item -Destination " + CFG + " -Destination " + WS}) is None
+         and _call("terminal", {"command": "Copy-Item -Destination " + WS + " -Destination " + CFG}) is None
+         and _call("terminal", {"command": "Tee-Object -FilePath " + WS + " -LiteralPath " + CFG}) is None)
+    # K6/K7 封堵保持 + 引号标志不可运行形锁（r11-17 面 per-cmd 化后不回潮）
+    _rec("TC-R13-17 K6/K7 封堵保持（-Path ws -Dest CFG / 末位 -Dest CFG）",
+         hit("Copy-Item -Path " + WS + " -Destination " + CFG)
+         and hit("Copy-Item " + WS + " -Destination " + CFG))
+    _rec("TC-R13-18 引号标志不可运行形锁 PASS（r11-17 面不回潮）",
+         _call("terminal", {"command": 'Copy-Item "-Destination" ' + CFG + " " + WS}) is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1366,6 +1423,7 @@ run_r9_fixes()
 run_r10_fixes()
 run_r11_fixes()
 run_r12_fixes()
+run_r13_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

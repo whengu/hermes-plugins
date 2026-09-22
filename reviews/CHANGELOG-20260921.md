@@ -6,6 +6,59 @@
 
 ---
 
+---
+
+## 2026-09-23 round13（安全路 F-12-1/2/3 修复：PS per-cmd 目标表 + 引号粘连选项值，fix-013）
+
+**立项**：安全路 round12 终审 CHANGES REQUIRED（F-12-1/F-12-2 = PM X-13 候选独立
+复核成立，同根合并；F-12-3 引号粘连选项值）+ PM pwsh/curl 活证真可执行背书
+（pm_probe_013_pre.md）；pm_verify_013 基线 19 ok + 11 FAIL。
+
+**修复项（TC-R13 18 条 + _verify_r13 41/41 + pm_verify_013 30/30，门禁实跑全绿）**：
+- 改动A（F-12-1+F-12-2，MED 旁路+误拦双向，per-cmd 目标表）：新增
+  `_PS_TARGET_FLAGS = {copy-item: Destination, tee-object: FilePath|LiteralPath}`
+  分表 + 派生三表（尾锚 `_PS_TAIL_ANCHOR_RES`/绑定 `_PS_TGT_BIND_RES`/冒号粘连
+  `_PS_GLUED_NAMED_RES`），旧全局 `_PS_NAMED_TARGET_RE`/`_GLUED_NAMED_RE` 删除；
+  `_terminal_position_is_write` 命名支按三分句重构：判写=before 尾锚本 cmd 目标
+  标志或 raw=冒号绑定目标值（且段内该族标志未绑另一值）；判读=目标标志已绑另一值
+  →PASS 且否决末位；段内无目标绑定→末位启发。否决子句逐 cmd（禁全局并集——X2 不
+  被 Tee 目标词误否决）。ANY_RE 五词仅作命名在场前置（A4 不动）。
+  X1~X4/T1~T3 → 命中；K2/K4/K11 与 r11 锁形全保持 PASS。
+  **根因链如实记载**：round12 改动1（Q-11-1/F-11-3）把 TARGET 收窄成 cmd 无关
+  全局两词集，压平了 PS per-cmd 语义——Copy-Item 的 -LiteralPath 是源参、
+  Tee-Object 的 -LiteralPath 却是 -FilePath 指定集成员=输出目标（pwsh 活证真写）；
+  且前置支否决子句把 ANY 五词任意后随都当「目标另有其主」移交，源参标志（-Path/
+  -Container）后随时真目标已绑形漏拦（F-12-1 回退了 r11 已有的 `-Destination
+  <CFG> <标志位>` 捕获能力）。
+- 改动B（F-12-3，LOW 旁路）：`_GLUED_O_RE` 匹配输入剥**成对**外层引号一处
+  （`_pair_unquote`，比照 _GLUED_T_RE 引号先例；整支在 _OUTPUT_FLAG_CMDS_RE 门后
+  =仅 curl/wget/sort，零扰动复制族；token 化/norm 链不经过——F-7-2 禁令不回潮）。
+  E1~E4（curl "-so<CFG>"/'-o<CFG>'/守卫源码）→ block；K13 grep 门外/K14 -O URL
+  红线/K17/K19 无回退。
+- **过程教训（修复引入回归第 3 次）**：链上两次均有案可稽——r10→r11（F-10-1/2，
+  fix-011-input 定性「round10 修复引入回归」双路同根互证）、r11→r12（Q-11-1/
+  F-11-3，r11 命名支 ANY 否决引入源位误弹 c1/c2/c5）；本批 r12→r13 为第 3 次
+  （TARGET 全局收窄压平 per-cmd 语义并回退 r11 捕获能力）——三次同构：「修复动作
+  本身把某一维语义压成更粗的全局形」引出新洞。固化教训：**收窄/放宽词表类修复，
+  验收面必须含 per-cmd 语义活证（本例 pwsh 一条 `-LiteralPath` Tee 真写即戳穿
+  全局表），不能只跑翻转表**。
+- **curl `=` 形附录（PM 活证，不立项登记）**：`curl -sfo=<CFG>` 判定端不拦与真实
+  语义一致——Windows curl 8.1.2 不吃 cluster 内 `=` 分隔，等号并入输出文件名
+  （实测落盘 `=_dst2.txt`），不构成对 `<CFG>` 的写；PS 域等号形（-Destination=）
+  则是 pwsh 直接拒绝绑定——两域语义不同但结论同向，均附录不修。
+- Z 组甄别（PM 活证补充）：双目标标志绑定（-Destination 重复/Tee -FilePath+
+  LiteralPath 并存）= PS 参数绑定错误整条不执行零写，三分句规则天然导出 PASS，
+  锁实测值不特判（TC-R13-16/_verify_r13 Z 组）。
+
+| # | 命令 | 结果 |
+|---|------|------|
+| 1 | python reviews/fix013-scratch/pm_verify_013.py | 通过 30 失败 0 |
+| 2 | python test_handler.py | ALL PASS (29 scan + 4 hook + 347 new，含 TC-R13 18 条) |
+| 3 | python _verify_r13.py | 通过 41 失败 0（含红线三形 on_pre_tool_call） |
+| 4 | python _verify_r12/r11/r10/r9/r8/r7/r5/r3 | 53/43/46/46/30/30/28/25 全零失败 |
+| 5 | python reviews/fix012-scratch/pm_verify_012.py | 23 形与 round12 期望一致，无回退 |
+| 6 | 红线三形（_verify_r12/r13 末组实跑） | gateway restart=block、cp 写配置=approve、Copy-Item 源位读=PASS |
+
 ## 2026-09-22 round12（round11 双路 CR 修复 F-11-1/2/3/4 + Q-11-1，fix-012）
 
 **round11 复审**：安全路 CHANGES REQUIRED（F-11-1~4，均实测复现+r9/r10/r11 三代
