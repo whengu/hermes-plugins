@@ -76,3 +76,12 @@ T4 approve / TC-R11 全部 / TC-R12 全部；新封堵期望：X1/X2/X3/T1/T2/T3
 双路复审（deleg_aadc7cca / deleg_be807b34）在途以 4e254c8 为读取面，PM 不动代码。
 质量路已回 PASS；待安全路回传后：其 finding + 本文件 X-13-1/X-13-2 合并立 fix-013
 一次性派单（立项依据=本文件实测表+pwsh 活证输出）。
+
+## PM 活证补记（01:2x）：curl cluster `=` 形不立项（行为语义正确）
+复审差分出现 `curl -sfo=<CFG>`=PASS。curl 8.1.2 file:// 活证：
+- `curl -sfo _dst1.txt file:///…` exit=0 真写 _dst1.txt（空格形=真写，判定已封）；
+- `curl -sfo=_dst2.txt file:///…` exit=0 但**实际落盘文件名是 `=_dst2.txt`**
+  （字面带等号）——Windows curl 不吃 cluster `=` 分隔。
+∴ 判定端不拦 `-sfo=<CFG>` 恰与 curl 真实语义一致（它并不写 `<CFG>`），无旁路无 FP。
+sa-0 附录"等号形拒绝"的措辞系 PS 域（-Destination= 被 pwsh 拒），curl 域是"等号入
+文件名"——语义不同但结论同向（该形不构成对目标路径的写）。**不立项，仅观察记录。**
