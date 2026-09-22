@@ -4,7 +4,7 @@
 - **handler sha256 前 16**: `cf61f3291970a021`（主部署+双镜像，实测一致）
 - **test_handler**: ALL PASS（29 scan + 4 hook + 347 new cases）
 - **规格**: reviews/fix-013-input.md（含「PM 活证补充」节：双目标标志绑定→Z1/Z3 锁 PASS 禁特判）
-- **落地制品**: reviews/fix-013.md（§0/§A/§B/§N/§V 五段全落）
+- **落地制品**: reviews/fix-013.md（§0 全落；§A/§B/§N/§V 施工截断未回填，Q13-C 修正——权威记载见 CHANGELOG round13 节+git diff 10a2094；回填义务并入 round14 NOTES）
 
 ## 改动摘要
 - 改动A（F-12-1+F-12-2）：PS per-cmd 目标表 `_PS_TARGET_FLAGS = {copy-item: Destination, tee-object: FilePath|LiteralPath}` + 派生三表（尾锚/绑定/冒号粘连），旧全局 `_PS_NAMED_TARGET_RE`/`_GLUED_NAMED_RE` 删除；命名支三分句重构（判写=本 cmd 目标标志尾锚/冒号绑定且未绑另一值；判读=已绑另一值→PASS 且否决末位；无绑定→末位启发）。X1~4/T1~3 封堵、K1~K11 锁形保持。

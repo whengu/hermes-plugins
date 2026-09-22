@@ -35,6 +35,16 @@ cases = [
     ("K8  install -t<非保护>",                  f"install -t{WS}/y ok.txt",                        "pass"),
     ("K9  grep \"-o\" CFG 门外",                f'grep "-o" {CFG}',                                "pass"),
     ("K10 cp \"-t<PDIR>劈x\" 穿插族登记面",       f'cp "-t{PDIR[:6]}"x/{PDIR[6:]}\' ok.txt',           "any"),
+    # ---- 靶心 T11~T18：质量路 Q13-A/B 引号 cluster + -t 族（当前 PASS=旁路，修后 hit）
+    ("T11 curl \"-so\" <CFG> url (Q13-A)",       f'curl "-so" {CFG} http://x',                     "hit"),
+    ("T12 curl \"-sSo\" <CFG> (Q13-A)",          f'curl "-sSo" {CFG} http://x',                    "hit"),
+    ("T13 wget \"-qO\" <CFG> (Q13-A)",           f'wget "-qO" {CFG} http://x',                     "hit"),
+    ("T14 sort \"-ro\" <CFG> (Q13-A)",           f'sort "-ro" {CFG} d.txt',                        "hit"),
+    ("T15 cp \"-t<PDIR>\" (Q13-B=sec S1 同洞)",   f'cp ok.txt "-t{PDIR}"',                          "hit"),
+    ("T16 cp \"-tdst\" 非保护对照 保持PASS",       'cp "-tdst" in2.txt',                             "any"),
+    ("T17 bash -c 内 curl \"-so\" <CFG>",         "bash -c " + chr(39) + f'curl "-so" {CFG} http://x' + chr(39), "hit"),
+    ("T18 curl \"-oL\" url 零误拦锁",             'curl "-oL" http://x',                            "pass"),
+    ("K11 grep \"-so\" 词 门外零误拦",            f'grep "-so" {CFG}',                              "pass"),
 ]
 nf = 0
 for label, cmd, want in cases:

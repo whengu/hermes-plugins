@@ -1,6 +1,6 @@
 # fix-013 修复规格（round13：PS per-cmd 目标表 + 引号粘连选项值）
 
-基线：git 8dde55b（round12 部署 4e254c8 后仅文档提交），329 new 用例 ALL PASS。
+基线：git 8dde55e（round12 部署 4e254c8 后仅文档提交；原误书 8dde55b——幽灵 sha，Q13-E 修正），329 new 用例 ALL PASS。
 准绳不变：requirements/requirement-20260922-boundary.md。
 来源：安全路 F-12-1/F-12-2（=PM X-13 候选独立复核成立）+ F-12-3（引号粘连选项值）。
 全部 pwsh/curl 活证真可执行（非理论形），详见
