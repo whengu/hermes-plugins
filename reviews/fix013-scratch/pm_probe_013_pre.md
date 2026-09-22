@@ -36,6 +36,43 @@ N1 `curl --http1.0 <CFG>`=PASS（数字尾不吃 ✓）；N2 `curl -Oso <CFG>`=b
 N3 `wget -O-`=PASS ✓；N4 `curl "-o" <非保护>`=PASS ✓；N5 `sort /O<CFG>`=block ✓；
 N6 `-Destination:"<CFG>"` 引号值=approve ✓。
 
+## X-13-2（候选 MED，PS 活证实锤）Tee-Object -LiteralPath = 目标语义漏拦
+实测（round12 基线）：
+- T1 `Tee-Object -LiteralPath <CFG>` → PASS；T2 冒号形 → PASS；
+  T3 `-InputObject x -LiteralPath <CFG>` → PASS；对照 T4 -FilePath CFG → approve ✓。
+**pwsh 活证**：`Tee-Object -LiteralPath D:/…/\_live_t.txt` → 文件真实写出
+（Tee-LiteralPath-wrote: True）。PS 语义：Tee-Object 的 -LiteralPath 是 -FilePath
+的指定集成员（输出目标），与 Copy-Item 的 -LiteralPath（源参）**语义相反**。
+TARGET 收窄为全局 {Destination,FilePath} 时把 per-cmd 语义压平所致。
+
+## pwsh 活证补强 X-13-1
+`Copy-Item -Destination <dst> -Path <src>` 组合合法运行且写入 Destination
+（Dest+Path-combo-runs: True）——X1/X2/X3 是真可执行旁路，非理论形。
+
+## 根因合并（X-13-1 与 X-13-2 同根）
+
+### PM 补测（01:2x）+ 修法推演定稿
+枚举后随标志：`-Destination <CFG>` 后随 -WhatIf/-Force/-Recurse（不在 ANY 表）→
+approve 正常命中；后随 -Path/-Container（ANY 表源参）→ PASS 漏拦。**精确根因**：
+前置支否决子句 `not _PS_NAMED_ANY_RE.search(seg[m.end():])` 把 ANY 五词任何一个
+后随都当"目标另有其主"，但语义上只有**目标族标志**（Destination/FilePath/冒号形）
+后随才接管目标；-Path/-Container 是源参，不改变已绑定的 Destination 目标。
+候选修法（推演全支路通过）：否决子句的搜索正则从 ANY_RE 换为目标族专用正则
+（`-(?:Destination|FilePath)\b|^-(?:Destination|FilePath):` 同款，含冒号形）。
+支路验证：C2（-Container CFG -Destination 非保护=PASS）CFG 绑非目标词前置支本不触发
+✓；C1 后随位置参无标志 ✓；r11 双 Destination 接管形否决保持 ✓；X1/X2/X3 封堵 ✓。
+
+### X-13-2 修法（per-cmd 目标表）
+_PS_NAMED_TARGET_RE 的全局词表改按 cmd 分表：copy-item→{Destination}、
+tee-object→{FilePath, LiteralPath}（pwsh 活证 Tee -LiteralPath 真写目标）；
+_GLUED_NAMED_RE 冒号形词集同步分 cmd。两处改动合计预估 ≤8 行（一个 dict + 取表一行 +
+正则参数化），仍零新解析层。
+锁形保全清单（round13 验收必测，全部现值不得回退）：
+C1 approve / C2 PASS / C3 PASS / c1/c2/c5 PASS / X4/X5 approve / X8/X9 approve /
+T4 approve / TC-R11 全部 / TC-R12 全部；新封堵期望：X1/X2/X3/T1/T2/T3 命中
+（写配置=approve 弹卡、写守卫=block 按既有处置分流）。
+
 ## 处置纪律
 双路复审（deleg_aadc7cca / deleg_be807b34）在途以 4e254c8 为读取面，PM 不动代码。
-回传后：若任一路报同形 → 并入 fix-013；均未报 → PM 按本差分补报（立项依据=本文件实测表）。
+质量路已回 PASS；待安全路回传后：其 finding + 本文件 X-13-1/X-13-2 合并立 fix-013
+一次性派单（立项依据=本文件实测表+pwsh 活证输出）。
