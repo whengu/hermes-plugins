@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-09-22 round5（round4 双路复审修复，deleg_6dc70025）
+
+**round4 复审**：sa-0 安全 CHANGES REQUIRED（F-1~F-8 + OBS-1/2）；sa-1 质量
+CHANGES REQUIRED（R4-1~R4-6，阻断三项 R4-1/R4-2/R4-5）。双路收敛一致处：
+round3 修复主体真到位（六项中 C-1/N-4/N-5 完全过、五/六重放通过），扣分集中
+在"修复引入的同类新面"。
+
+**修复项（TC-R5-01~16 锁定，28 场景复验全过）**：
+- **F-1（HIGH，H-1 同源再犯）**：`cp evil <home>/plugins/write-guard`（无尾
+  分隔符，Windows 与带斜杠同语义）旁路反缴械——新增 _is_guard_dir_target，
+  复制族/-t/收集面三处接入；无尾分隔符的守卫目录目标一律按写处置。
+- **F-2**：workdir 相对形态未绝对化（`workdir="../.hermes"` + 相对写旁路）——
+  判定基准先过 _normalize_path（相对进程 cwd，与平台 shell 常态一致）。
+- **F-3（=R4-2）**：from-import 门留同类逃逸（别名 as r / star import * / 多行
+  括号 / import subprocess as sp 全漏）——门重写覆盖四形态，负例零误拦保持。
+- **F-4（=R4-5）**：robocopy"并入复制族"是半匹配假覆盖（src <dir> <file> 目标
+  在第2参）——**撤出** _COPY_CMDS，降声明边界（CHANGELOG+代码注释+TC-R5-15
+  锁 PASS 防漂移）。与 round3 拒绝 spawn 族的自家论据对齐（名实一致）。
+- **F-5**：_DD_RE/_SED_PERL_RE 缺 IGNORECASE（大写 SED/DD/PERL 漏拦，同族
+  _PS_WRITE_RE 有）——补齐。
+- **R4-1**：rsync 的 -t 是 preserve-times 不是目标目录，误拦纯读形态——
+  -t 分支限 cmd in (cp, install)。
+- **F-6**：cwd 死键参与 C 扫描=防御纵深超集（幻觉 cwd=/tmp 被拦，fail-closed
+  可接受）——注释补记决策理由。
+- **F-7**：args 非 dict → 三守卫连抛被项级隔离吞掉整链放行（round2 同类
+  fail-open 残面）——入口收敛 args = {} 走完整链。
+- **OBS-1（部署面）**：平台插件发现只扫 get_hermes_home()/plugins，profile
+  会话（hermes -p developer/architect）加载各自 profiles/<p>/plugins/ 下的
+  **v1.0.0 陈旧副本**=round2/3/4 保护在 profile 会话不存在——deploy.py 新增
+  mirror_to_profiles：主部署后镜像同步**已存在** write-guard 目录的 profile
+  （不凭空给未安装 profile 装守卫）。
+- **R4-4**：_SUBPROC_BARE_RE_TMPL 死常量随 F-3 重写移除（AST 全模块复扫零
+  未用顶层名）。
+
+**未修（登记边界）**：F-8 两向（docstring 升格误拦=fail-closed 方向接受；
+相邻字面量拼接漏=需 AST 级解析，违背不加复杂度）；M-3 会话级 cd 回退落差
+（R4-6，平台 _resolve_command_cwd 有 session-cwd 记录，插件回退进程 cwd——
+常态一致，漂移场景登记不修）；tar/ln 束（N-8，理由已登记）。
+
+**基线**：ALL PASS 29+4+208（+16 条 TC-R5）。
 ## 2026-09-22 round3 复审修复（deleg_87a156db 双路复审：sa-1 CRITICAL/HIGH + sa-0 N 系列）
 
 **阻断项（已修，TC-R3-01~16 回归锁定）**：

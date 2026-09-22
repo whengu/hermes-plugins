@@ -739,6 +739,62 @@ def run_r3_fixes():
     _rec("TC-R3-16 cat 插件子目录 → 放行（H-1 负例）", res is None)
 
 
+def run_r5_fixes():
+    """round5 复审修复回归（双路 finding：F-1/F-2/F-3/F-5/F-7/R4-1/F-4 边界）。"""
+    GUARD = "D:/myagent/.hermes/plugins/write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    # F-1（HIGH）：守卫目录复制目标——无尾分隔符同义形态不再旁路
+    res = _call("terminal", {"command": "cp evil.py " + GUARD})
+    _rec("TC-R5-01 cp 守卫目录无斜杠 → approve（F-1）", _is_approve(res))
+    res = _call("terminal", {"command": 'cp evil.py "' + GUARD + '"'})
+    _rec("TC-R5-02 cp 守卫目录引号包裹 → approve（F-1）", _is_approve(res))
+    res = _call("terminal", {"command": "cp -t " + GUARD + " evil.py"})
+    _rec("TC-R5-03 cp -t 守卫目录无斜杠 → approve（F-1）", _is_approve(res))
+    res = _call("terminal", {"command": "cat " + GUARD + "/plugin.yaml"})
+    _rec("TC-R5-04 cat 守卫目录文件 → 放行（F-1 负例：读不拦）", res is None)
+    # F-2：workdir 相对形态按平台语义绝对化（显式锚定进程 cwd 基准，
+    # 不依赖 runner 实际 cwd——判定语义：workdir 相对会话 cwd=进程 cwd 常态）
+    saved_cwd = _os.getcwd
+    _os.getcwd = lambda: r"D:\myagent\workspace"
+    try:
+        res = _call("terminal", {"command": "echo x > config.yaml",
+                                 "workdir": "../.hermes"})
+    finally:
+        _os.getcwd = saved_cwd
+    _rec("TC-R5-05 workdir=../.hermes 相对写 → block（F-2）", _is_block(res))
+    # F-3：from-import 门别名/star/多行括号形
+    res = _call("execute_code", {"code": "import subprocess as sp\n"
+                                        "sp.run('echo x > " + CFG + "', shell=True)"})
+    _rec("TC-R5-06 import subprocess as sp 别名 → block（F-3）", _is_block(res))
+    res = _call("execute_code", {"code": "from subprocess import run as r\n"
+                                        "r('echo x > " + CFG + "', shell=True)"})
+    _rec("TC-R5-07 from import run as r 别名 → block（F-3）", _is_block(res))
+    res = _call("execute_code", {"code": "from subprocess import *\n"
+                                        "run('echo x > " + CFG + "', shell=True)"})
+    _rec("TC-R5-08 from import * → block（F-3）", _is_block(res))
+    res = _call("execute_code", {"code": "from subprocess import (\n    run,\n)\n"
+                                        "run('echo x > " + CFG + "', shell=True)"})
+    _rec("TC-R5-09 多行括号 import → block（F-3）", _is_block(res))
+    res = _call("execute_code", {"code": "def run():\n    pass\nrun()"})
+    _rec("TC-R5-10 业务 run() 无 import → 放行（F-3 负例零误拦）", res is None)
+    # F-5：大写命令词（与 _PS_WRITE_RE 同族对齐 IGNORECASE）
+    res = _call("terminal", {"command": "SED -i 's/a/b/' " + CFG})
+    _rec("TC-R5-11 SED 大写 -i → block（F-5）", _is_block(res))
+    res = _call("terminal", {"command": "DD of=" + CFG})
+    _rec("TC-R5-12 DD 大写 of= → block（F-5）", _is_block(res))
+    res = _call("terminal", {"command": "PERL -pi -e 's/a/b/' " + CFG})
+    _rec("TC-R5-13 PERL 大写 -pi → block（F-5）", _is_block(res))
+    # R4-1：rsync -t 是 preserve-times，不得按 cp -t 目标语义过拦
+    res = _call("terminal", {"command": "rsync -t " + CFG + " backup/"})
+    _rec("TC-R5-14 rsync -t 纯读方向 → 放行（R4-1 误拦修复）", res is None)
+    # F-4：robocopy 假并入撤回——三参定向覆写为声明边界（锁 PASS 防语义漂移）
+    res = _call("terminal", {"command": "robocopy src D:/myagent/.hermes config.yaml"})
+    _rec("TC-R5-15 robocopy 三参 → 放行（F-4 声明边界锁定）", res is None)
+    # F-7：args 非 dict 不再三守卫连抛整链放行（收敛为空参数走链）
+    res = handler.on_pre_tool_call("terminal", None, "t")
+    _rec("TC-R5-16 args=None 不抛异常按空参放行（F-7）", res is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -926,6 +982,7 @@ run_gateway_cmd()
 run_sec_bypass()
 run_m_fixes()
 run_r3_fixes()
+run_r5_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

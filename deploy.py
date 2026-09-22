@@ -82,10 +82,52 @@ def main(argv) -> int:
     if not ok:
         return 1
 
+    # [5] profile 镜像（round4 OBS-1）：平台插件发现按 get_hermes_home()/plugins
+    # 扫描，profile 会话（hermes -p <name>）该值=profile 目录（profiles.py 实证）
+    # ——profiles/*/plugins/write-guard 下的陈旧副本会在该 profile 会话里顶掉主
+    # 部署。凡已存在 write-guard 目录的 profile 一律镜像同步（不新建：给没有
+    # 插件的 profile 凭空装上守卫会改变其行为，超出部署职责）。
+    mirrored = mirror_to_profiles(dst)
+    if mirrored is None:
+        return 1
+
     print()
-    print(f"部署完成: {src} -> {dst}")
+    print(f"部署完成: {src} -> {dst}（profile 镜像 {mirrored} 处）")
     print("注意: 插件改动需重启 Gateway 才生效（当前会话不热加载）")
     return 0
+
+
+def mirror_to_profiles(dst: Path) -> int | None:
+    """把主部署目录的 FILES 镜像到同级 profiles/*/plugins/write-guard/。
+
+    返回同步的 profile 数；任一镜像哈希校验失败返回 None（→ main 返回 1）。
+    仅同步「已存在 write-guard 目录」的 profile；目录不存在=该 profile 未安装
+    本插件，保持不动。"""
+    profiles_root = dst.parent.parent / "profiles"      # <home>/plugins/write-guard → <home>/profiles
+    if not profiles_root.is_dir():
+        print("  无 profiles 目录，跳过镜像")
+        return 0
+    count = 0
+    for pd in sorted(profiles_root.iterdir()):
+        target = pd / "plugins" / "write-guard"
+        if not target.is_dir():
+            continue
+        ok = True
+        for f in FILES:
+            src_file = dst / f                          # 以主部署（刚校验过）为源
+            shutil.copy2(src_file, target / f)
+            if _sha(target / f) != _sha(src_file):
+                print(f"  FAIL profile[{pd.name}] {f} 镜像校验不一致")
+                ok = False
+        pc = target / "__pycache__"
+        if pc.is_dir():
+            shutil.rmtree(pc)
+        print(f"  已镜像 profile[{pd.name}]")
+        if ok:
+            count += 1
+        else:
+            return None
+    return count
 
 
 if __name__ == "__main__":

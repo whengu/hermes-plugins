@@ -185,6 +185,8 @@ def _guard_tmpdir(tool_name: str, args: dict, task_id: str = "") -> dict | None:
             # （terminal_tool 签名实证：command/workdir/…，schema 无 cwd）。
             # 旧修复扫 args["cwd"] 打在不存在键上=零效果的假绿。两键并收。
             texts.append(args.get("workdir"))
+            # cwd 是平台 schema 不存在的死键（F-6 round4）：保留扫描=防御纵深
+            # 超集——幻觉参数 cwd=/tmp 会被拦（fail-closed 方向，代价可接受）。
             texts.append(args.get("cwd"))
         hit = None
         for t in texts:
@@ -244,8 +246,8 @@ _SLASH_DRIVE_RE = re.compile(r"^/[A-Za-z]:/")
 _WIN_ABS_RE = re.compile(r"^[A-Za-z]:[/\\]")
 _DOT_SEGMENT_RE = re.compile(r"(?:^|[/\\])\.\.?(?:[/\\]|$)")
 _SEG_HEAD_RE = re.compile(r"\s*([^\s;&|<>()]+)")
-_DD_RE = re.compile(r"\bdd\b")
-_SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b")
+_DD_RE = re.compile(r"\bdd\b", re.IGNORECASE)          # F-5（round4）：DD 大写同拦
+_SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b", re.IGNORECASE)   # F-5：SED/PERL 大写同拦
 # PowerShell 写 cmdlet（安全走查 F-A6）：受保护路径出现在其之后即写目标
 _PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORECASE)
 # cp/install -t <dir> 目标标志（F-A7）：-t 后紧跟受保护目录
@@ -290,9 +292,13 @@ _OS_SYSTEM_RE = re.compile(
 _SUBPROC_CALL_RE = re.compile(       # round3 N-1：subprocess. 限定形 + 裸词形两段
     r"\b(?:subprocess\.){1}(?:run|call|check_call|check_output|Popen|getoutput)\s*\(")
 # `from subprocess import run` 后的裸 run(...)：仅当代码含该 from-import 时才扫（防误拦）
+# round4 F-3：门覆盖 from-import 的别名（run as r）/ 多行括号 / star（import *）
+# 三形态，另收 `import subprocess as sp` 模块别名（组3→限定形按别名重建）。
 _SUBPROC_IMPORTED_RE = re.compile(
-    r"\bfrom\s+subprocess\s+import\s+[^\n#]*\b(run|call|check_call|check_output|Popen|getoutput)\b")
-_SUBPROC_BARE_RE_TMPL = r"\b{fn}\s*\(\s*(?:\[)?\s*(?:[rbfuRBFU]{0,2})(['\"])"
+    r"\bfrom\s+subprocess\s+import\s+(?:\(([^)]*)\)|([^\n#]*))"   # 括号形跨行
+    r"|\bimport\s+subprocess\s+as\s+(\w+)", re.DOTALL)
+_SUBPROC_FUNCS = ("run", "call", "check_call", "check_output", "Popen",
+                  "getoutput", "getstatusoutput")
 # M-1：terminal 段的内嵌 shell 载体——命令词为 shell 解释器且带 -c/-lc/-Command
 # /-command-with-args，其引号内字符串是完整 shell 命令，递归复用 terminal 判定链。
 _EMBED_SHELL_RE = re.compile(
@@ -547,7 +553,11 @@ _CD_PREFIX_RE = re.compile(r"^(?:cd|pushd)\s+(?:/d\s+)?([^|]+)$", re.IGNORECASE)
 # rsync/robocopy 与 cp 同为复制语义（末位参数=目标，复用现有分支零新逻辑，
 # N-6 保守子集）。tar -C/unzip -d/patch/ln/find -delete 需目标位语义解析或属
 # 链接/改名族，按"不加复杂度"降为声明边界（CHANGELOG round3 记录）。
-_COPY_CMDS = ("cp", "copy", "install", "rsync", "robocopy")
+# 不含 robocopy（round4 F-4/R4-5）：robocopy 参数序是 src <dir> <file>——目标在
+# 第 2 参、末位是文件名，cp 式"末位=目标"判定套不上，并入只会形成半匹配假覆盖
+# （实测三参定向覆写漏拦）。正确处理需 robocopy 专属位参解析，违背"不加复杂度"
+# → 降为声明边界（CHANGELOG）；其写配置行为仍被绝对路径 token + 其余矩阵分支兜底。
+_COPY_CMDS = ("cp", "copy", "install", "rsync")
 _MOVE_CMDS = ("mv", "ren")
 
 # 输出参数形态（FR-02③「等」字范围）：已知带输出文件参数的下载/输出命令
@@ -579,6 +589,18 @@ def _command_word(seg: str):
     if not m:
         return None
     return m.group(1).strip("'\"").lower()
+
+
+def _is_guard_dir_target(norm) -> bool:
+    """F-1（round4，HIGH）：norm 指向守卫插件自身目录（…/plugins/write-guard）。
+    Windows 语义下 cp 目标是目录时可不带尾分隔符（`cp evil D:\\...\\write-guard`
+    与带斜杠同义，实测轮3 仅拦带斜杠形态=反缴械链仍开）。凡复制目标指向守卫
+    目录（含无分隔符形态）一律按写目标处置——覆写 handler.py/plugin.yaml 即
+    缴械全部保护，此处宁拦勿漏（该目录作为复制末位目标无合法写场景）。"""
+    if norm is None:
+        return False
+    guard_dir = _hermes_home() + _SEP + "plugins" + _SEP + "write-guard"
+    return norm == guard_dir or norm.startswith(guard_dir + _SEP)
 
 
 def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> bool:
@@ -618,12 +640,21 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
             if raw.rstrip("\"'").endswith(("/", chr(92))) \
                     and norm is not None and norm.startswith(_hermes_home() + _SEP):
                 return True
+            # F-1：目标是守卫插件目录（无尾分隔符的 Windows 同义形态）→ 写
+            if _is_guard_dir_target(norm):
+                return True
             return True                   # 末位路径参数 = 复制目标
         # cp -t <dir> src…：当前路径参数是受保护目录本身（home）或其内目录，
         # 且带 -t 目标标志 → 写面（安全走查 F-A7）。
         home = _hermes_home()
         # H-1：-t 目标可为 home 本身或 home 内任意目录（原仅 == home 太窄）
-        if norm is not None and (norm == home or norm.startswith(home + _SEP)) \
+        # F-1：-t 目标同样接受守卫目录无分隔符形态
+        # R4-1（round4）：仅 cp/install 的 -t 是"目标目录"标志；rsync 的 -t 是
+        # preserve-times（选项语义不同），按 cp 套用过拦纯读形态 rsync -t <CFG> dest/。
+        if cmd in ("cp", "install") \
+                and norm is not None \
+                and (norm == home or norm.startswith(home + _SEP)
+                     or _is_guard_dir_target(norm)) \
                 and _COPY_T_RE.search(before):
             return True
         return False
@@ -768,6 +799,10 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
         is_dir_target = (raw.rstrip("\"'").endswith(("/", chr(92)))
                          and norm is not None
                          and (norm == _hermes_home() or norm.startswith(_hermes_home() + _SEP)))
+        # F-1：收集面同步放宽——守卫目录 token（无尾分隔符）也进写矩阵判定，
+        # 读命令（cat/ls 该目录）由矩阵按读语义放行，不受收集面影响。
+        if not is_dir_target and _is_guard_dir_target(norm):
+            is_dir_target = True
         if _is_protected_config(norm) or norm == _hermes_home() or is_dir_target:
             protected.append((m, raw, norm))
     if not protected:
@@ -820,20 +855,40 @@ def _judge_execute_code(code, tool_name, base=None, depth=0):
                 return hit
         # 执行点集合：subprocess.xxx(...) 限定形 + （存在 from-import 时）裸词形
         call_sites = [(m.start(), m.end()) for m in _SUBPROC_CALL_RE.finditer(code)]
-        for im in _SUBPROC_IMPORTED_RE.finditer(code):   # N-1 from-import 门：
-            # 仅当代码确实写了 `from subprocess import run/call/...` 才扫裸词，
-            # 避免把业务函数 run()/call() 误当 subprocess。
-            for fn in im.groups():
-                    if not fn:
-                        continue
-                    bare = re.compile(
-                        r"\b" + fn + r"\s*\(", re.IGNORECASE)
-                    for bm in bare.finditer(code):
-                        # 排除 subprocess.run( 限定形（前一个词是 .）
-                        pre = code[:bm.start()].rstrip()
-                        if pre.endswith("."):
-                            continue
-                        call_sites.append((bm.start(), bm.end()))
+        # F-3 模块别名形：`import subprocess as sp` → sp.run(...) 等限定调用
+        for im in _SUBPROC_IMPORTED_RE.finditer(code):
+            alias = im.group(3)
+            if alias:
+                alias_re = re.compile(
+                    r"\b" + re.escape(alias) + r"\.\w+\s*\(")
+                call_sites += [(x.start(), x.end()) for x in alias_re.finditer(code)]
+        # N-1 from-import 门：仅当代码确实把 subprocess 函数导入成裸名时才扫裸词
+        # （防误拦业务 run()）。F-3 扩展门条件：别名 as r、star import *、多行括号。
+        bare_names, star = [], False
+        for im in _SUBPROC_IMPORTED_RE.finditer(code):
+            body = im.group(1) if im.group(1) is not None else (im.group(2) or "")
+            if "*" in body:
+                star = True
+            toks = body.replace(",", " ").split()
+            i = 0
+            while i < len(toks):
+                name, alias = toks[i], None
+                if i + 2 < len(toks) and toks[i + 1] == "as":
+                    alias = toks[i + 2]        # `run as r`：生效名是别名 r
+                    i += 3
+                else:
+                    i += 1
+                if name in _SUBPROC_FUNCS:
+                    bare_names.append(alias or name)
+        if star:
+            bare_names = list(_SUBPROC_FUNCS)
+        for fn in bare_names:
+            bare = re.compile(r"\b" + re.escape(fn) + r"\s*\(")
+            for bm in bare.finditer(code):
+                pre = code[:bm.start()].rstrip()
+                if pre.endswith(".") or pre.endswith("as"):
+                    continue          # 限定形已收集 / `import x as run` 声明本身
+                call_sites.append((bm.start(), bm.end()))
         for cstart, cend in call_sites:
             call_open = code.find("(", cstart)
             if call_open == -1:
@@ -902,9 +957,16 @@ def _guard_hermes_config(tool_name: str, args: dict, task_id: str = "") -> dict 
     if tool_name in ("write_file", "patch"):
         return _judge_path_param(text, tool_name)
     if tool_name == "terminal":
-        # M-3：显式 workdir 优先为判定基准（与平台 _resolve_command_cwd 一致）
+        # M-3：显式 workdir 优先为判定基准（与平台 _resolve_command_cwd 一致）。
+        # F-2（round4 MED）：平台把 workdir 原样传 shell，相对形态由 shell 相对
+        # **会话 cwd** 解析（`workdir="../.hermes"` 实际落盘 home）——判定时先按
+        # 进程 cwd 绝对化，与 shell 会话 cwd=进程 cwd 的常态一致（会话 cd 漂移
+        # 是 M-3 已登记的接受边界，此处不再叠加）。
         wd = args.get("workdir")
-        return _judge_terminal(text, tool_name, base_cwd=wd if isinstance(wd, str) and wd else None)
+        base = None
+        if isinstance(wd, str) and wd.strip():
+            base = _normalize_path(wd) or (wd if isinstance(wd, str) else None)
+        return _judge_terminal(text, tool_name, base_cwd=base)
     if tool_name == "execute_code":
         return _judge_execute_code(text, tool_name)
     return None   # S-5 显式兜底：已声明进扫描集但无判定分支的工具按未命中放行
@@ -988,6 +1050,11 @@ def on_pre_tool_call(tool_name, args, task_id="", **kwargs):
     项级 try/except 异常隔离（FR-14）：任一守卫抛异常 → 记日志后按未命中处理、
     继续轮询后续守卫，插件不整体失效（不得依赖平台 hook 异常兜底，平台行为
     为整个 hook 返回放行）。"""
+    if not isinstance(args, dict):
+        # F-7（round4）：args 非 dict（None/str/调用方畸形）时三守卫都会抛
+        # AttributeError 并被项级隔离逐个吞掉 → 整链放行（fail-open 残面）。
+        # 入口收敛：按空参数走完整守卫链（各守卫对缺参自有保守路径）。
+        args = {}
     try:
         for guard in GUARDS:
             try:

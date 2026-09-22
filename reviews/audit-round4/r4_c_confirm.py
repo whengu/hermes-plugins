@@ -1,0 +1,46 @@
+# -*- coding: utf-8 -*-
+"""round4 第三批：对第二批疑似漏拦的定向复确 + 边界记录完整性核对。"""
+import importlib.util, os
+spec = importlib.util.spec_from_file_location("wg4c", "handler.py")
+h = importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
+os.environ["HERMES_HOME"] = r"D:\myagent\.hermes"
+S=chr(92); HOME="D:"+S+"myagent"+S+".hermes"; CFG=HOME+S+"config.yaml"
+WG="D:/myagent/.hermes/plugins/write-guard"
+def act(t,a):
+    r=h.on_pre_tool_call(t,a); return (r or {}).get("action") or "PASS"
+def T(c,**kw): return act("terminal",{"command":c,**kw})
+def EC(c): return act("execute_code",{"code":c})
+P=lambda tag,g: print("  %-58s -> %s"%(tag,g))
+print("== F-1 H-1 无斜杠目录形态（同命令语义复确）==")
+P("cp handler.py <WG>            (无斜杠,正斜杠)", T("cp handler.py "+WG))
+P("cp handler.py <WG>            (无斜杠,反斜杠)", T("cp handler.py "+WG.replace("/",S)))
+P("cp handler.py '<WG>'          (无斜杠带引号)", T("cp handler.py "+chr(34)+WG+chr(34)))
+P("cp handler.py <WG>/sub/..     (点段无尾斜杠)", T("cp handler.py "+WG+"/sub/.."))
+P("cp handler.py <WG>/.          (点段无尾斜杠)", T("cp handler.py "+WG+"/."))
+P("对照: cp handler.py <WG>/     (带尾斜杠)", T("cp handler.py "+WG+"/"))
+print("== robocopy 三参语义（N-6 声明'并入复制族'的到位性）==")
+P("robocopy src <home> config.yaml      (2参目标+3参文件形)", T("robocopy src D:/myagent/.hermes config.yaml"))
+P("robocopy src <WG> handler.py         (定向覆写守卫源码)", T("robocopy src "+WG+" handler.py"))
+P("robocopy src <WG>/ handler.py        (目标带斜杠仍漏?)", T("robocopy src "+WG+"/ handler.py"))
+P("robocopy src <home>/                 (两参全量拷贝)", T("robocopy src "+HOME+"/"))
+P("robocopy <WG> dst handler.py         (读方向)", T("robocopy "+WG+" D:/myagent/workspace/bak handler.py"))
+print("== 大小写命令词（_SED_PERL_RE 无 IGNORECASE 复确）==")
+P("sed -i  (小写基线)", T("sed -i s/a/b/ "+CFG))
+P("SED -i  (大写)", T("SED -i s/a/b/ "+CFG))
+P("Sed -i  (混合)", T("Sed -i s/a/b/ "+CFG))
+P("perl -pi 小写基线", T("perl -pi -e s/a/b/ "+CFG))
+P("PERL -pi 大写", T("PERL -pi -e s/a/b/ "+CFG))
+P("dd 基线", T("dd if=x of="+CFG))
+P("DD 大写", T("DD if=x of="+CFG))
+P("tee 大写", T("echo hi | TEE "+CFG))
+print("== from-import 门变体收口 ==")
+P("from subprocess import *", EC("from subprocess import *"+chr(10)+"run('echo x > "+CFG+"', shell=True)"))
+P("from subprocess import (换行 run,)", EC("from subprocess import ("+chr(10)+"run,"+chr(10)+")"+chr(10)+"run('echo x > "+CFG+"', shell=True)"))
+P("import subprocess as sp + sp.run", EC("import subprocess as sp"+chr(10)+"sp.run('echo x > "+CFG+"', shell=True)"))
+P("from subprocess import run as r + r()", EC("from subprocess import run as r"+chr(10)+"r('echo x > "+CFG+"', shell=True)"))
+P("负例 star import 但 run 是业务函数", EC("from foo import *"+chr(10)+"run('echo x > "+CFG+"', shell=True)"))
+print("== 相邻字面量拼接（静态、非变量混淆）==")
+P("os.system 相邻拼接", EC("import os"+chr(10)+"os.system('echo x > D:/myagent/.hermes/conf' 'ig.yaml')"))
+P("open 相邻拼接路径", EC("open('D:/myagent/.hermes/conf' 'ig.yaml', 'w')"))
+print("== 部署/文档核对（内存探针）==")
+P("profile plugins 目录存在 handler v1.0.0(主会话已实证 4296B)", "noted")
