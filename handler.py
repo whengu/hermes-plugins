@@ -264,14 +264,20 @@ _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-dir
 # F-10-1（round11）：PS 复制族命名目标标志（比照 _COPY_T_RE 前置判据同款）。
 # _PS_NAMED_TARGET_RE 尾锚=本 token 紧随标志即其绑定值；_PS_NAMED_ANY_RE=段内
 # 出现过该族标志（末位启发否决依据，`-Destination 非保护 CFG` 源位不再误弹）。
+# F-11-3/Q-11-1（round12）：TARGET 词表收窄为目标词两词（PS 语义：Copy-Item 目标
+# 仅 Destination、Tee-Object 仅 FilePath；Path/LiteralPath/Container 恒为源参或非
+# 该族目标词）——ANY_RE 五词表不动（末位否决仍需源参在场信号）。
 _PS_NAMED_TARGET_RE = re.compile(
-    r"-(?:Destination|FilePath|Path|Container|LiteralPath)\s*$", re.IGNORECASE)
+    r"-(?:Destination|FilePath)\s*$", re.IGNORECASE)
 _PS_NAMED_ANY_RE = re.compile(
     r"-(?:Destination|FilePath|Path|Container|LiteralPath)\b", re.IGNORECASE)
 # Q-6-1（round7）：GNU 合法粘连短形 -t<dir> / -t=<dir>（cluster 在前、t 收尾，
 # 余部即目标值，与 getopt 语义一致）；另收引号选项形 cp"-t" 等
 # （shell 剥引号后与裸 -t 同义；字符类用 x27/x22 十六进制形避开 raw 串引号）。
 _GLUED_T_RE = re.compile(r"^-[a-zA-Z]*t=?(\S+)$")
+# F-11-1（round12）：PS 冒号粘连 `-Destination:<值>`/`-FilePath:<值>`（含引号值；
+# 等号形/全词粘连 pwsh 活证拒绝=附录不修）。提取值段进 norm，判定走命名支语义。
+_GLUED_NAMED_RE = re.compile(r"^-(?:Destination|FilePath):(['\"]?)(\S+?)\1$", re.IGNORECASE)
 # S-1（round9 fix-009）：-o<file>/-O<file> 粘连提取（=形已有 _OUTPUT_FLAG_EQ_RE；--output 长形双 dash 开头不匹配本形）
 # F-9-3（round10）：字符类 ^- → ^[-/]，收 cmd 原生 sort /O<file> 粘连方言
 _GLUED_O_RE = re.compile(r"^[-/][a-zA-Z]*[oO](?!=)(\S+)$")
@@ -608,7 +614,15 @@ _OUTPUT_FLAG_RE = re.compile(
     # F-10-2（round11）：短形组加 token 独立约束（(?:^|(?<=\s)) 前随空白/段首，
     # [-/]o 大小写双收由 IGNORECASE 承担）——路径/URL token 以 /o、/O、-o 收尾
     # 不再误命中（r10 放宽回归）；长形与 = 粘连链语义不变。
-    r"(?:--output-document|--output|(?:^|(?<=\s))[-/]o)\s*(?:=\s*)?$", re.IGNORECASE)
+    # F-11-4（round12）：并 dash 专属 cluster 尾 o 支 `-{1,2}[a-zA-Z]*o`（getopt
+    # `-so <file>` 与 `-o <file>` 同义，S-1 家族第三写法）；斜杠方言不参与——cmd
+    # 无 cluster 语义，F-10-2 的 `ws/o` 归正不回潮；`[a-zA-Z]*` 不吃数字。
+    r"(?:--output-document|--output|(?:^|(?<=\s))[-/]o|(?:^|(?<=\s))-{1,2}[a-zA-Z]*o)"
+    r"\s*(?:=\s*)?$", re.IGNORECASE)
+# F-11-2（round12）：引号包输出选项词 `curl "-o" <file>`（shell 剥引号后与裸 -o
+# 同义，curl 活证真写；比照 _COPY_T_QUOTED_RE 先例，整词成对、内容不可选、不做
+# 通用引号剥离——F-7-2 禁令不回潮）。
+_OUTPUT_QUOTED_RE = re.compile(r"[\x27\x22](?:-[oO]|--output(?:-document)?)[\x27\x22]\s*$")
 _OUTPUT_FLAG_EQ_RE = re.compile(
     r"(?:--output-document|--output|-o|-O)=(.*)$", re.IGNORECASE)
 
@@ -682,8 +696,12 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     # 输出参数（curl/wget/sort 的 -o/-O/--output，含 = 粘连形态）→ 写目标；
     # 未知命令的 -o/-O → 放行（语义不可判定，Q-03）。
     if _OUTPUT_FLAG_CMDS_RE.search(before):
-        if _OUTPUT_FLAG_RE.search(before) or _OUTPUT_FLAG_EQ_RE.match(raw) \
-                or _GLUED_O_RE.match(raw):          # S-1：-o<file> 粘连形
+        # F-11-2（round12）：or 支=引号包选项词（curl "-o" <CFG>，shell 剥引号
+        # 后与裸 -o 同义；比照 _COPY_T_QUOTED_RE 先例，不做通用引号剥离）
+        if (_OUTPUT_FLAG_RE.search(before)
+                or _OUTPUT_FLAG_EQ_RE.match(raw)
+                or _GLUED_O_RE.match(raw)              # S-1：-o<file> 粘连形
+                or _OUTPUT_QUOTED_RE.search(before)):  # F-11-2：引号选项词形
             return True
     # 原位编辑 sed -i / perl -pi → 写
     if _SED_PERL_RE.search(before) and (
@@ -698,7 +716,9 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
         # PASS）；标志后随另一命名标志（`-Container <CFG> -Destination 非保护`，
         # r10 锁形 B）目标另有其主→本 token 仍按源位放行。
         named = cmd in ("copy-item", "tee-object") and _PS_NAMED_ANY_RE.search(seg)
-        if named and _PS_NAMED_TARGET_RE.search(before) \
+        # F-11-1（round12）：or 支=本 token 即冒号粘连绑定值（-Destination:<CFG>）。
+        if named and (_PS_NAMED_TARGET_RE.search(before)
+                      or _GLUED_NAMED_RE.match(raw)) \
                 and not _PS_NAMED_ANY_RE.search(seg[m.end():]):
             return True
         path_tokens = [t for t in _PATH_TOKEN_RE.finditer(seg)]
@@ -926,7 +946,8 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             norm_raw = raw[1:]
         else:
             gm = _GLUED_T_RE.match(raw) or _GLUED_O_RE.match(raw)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
-            norm_raw = gm.group(1) if gm else raw
+            gn = _GLUED_NAMED_RE.match(raw)   # F-11-1（round12）：冒号粘连值段（引号优先于 t/o 误提取）
+            norm_raw = gn.group(2) if gn else (gm.group(1) if gm else raw)
         norm = _normalize_path(norm_raw, base=cwd)
         if norm is None:
             continue

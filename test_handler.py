@@ -1101,6 +1101,76 @@ def run_r11_fixes():
     _rec("TC-R11-17 F-10-1 引号变体：引号值封堵命中/引号标志不可运行形锁现状", ok)
 
 
+def run_r12_fixes():
+    """round12 修复回归（F-11-1/2/3/4 + Q-11-1）。"""
+    B = chr(92)
+    GD = "D:" + B + "myagent" + B + ".hermes" + B + "plugins" + B + "write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    WS = "D:/myagent/workspace/a.txt"
+    BAK = "D:/myagent/workspace/bak.yaml"
+    # 改动1 F-11-3/Q-11-1：TARGET 收窄（源位归正 + 封堵保持）
+    ok = _call("terminal", {"command": "Copy-Item -Destination " + WS + " -Path " + CFG}) is None \
+        and _call("terminal", {"command": "Copy-Item -Destination " + WS + " -LiteralPath " + CFG}) is None
+    _rec("TC-R12-01 F-11-3 反序双标志 -Path/-LiteralPath 源位 → 放行", ok)
+    res = _call("terminal", {"command": "Copy-Item -Path " + CFG + " " + WS})
+    _rec("TC-R12-02 Q-11-1 单标志 -Path CFG 非保护末位 → 放行", res is None)
+    res = _call("terminal", {"command": "Copy-Item -Destination " + CFG + " " + WS})
+    _rec("TC-R12-03 改动1 负向零回退 -Destination CFG 前置仍命中弹卡", _is_approve(res))
+    res = _call("terminal", {"command": "Tee-Object -FilePath " + CFG + " x"})
+    _rec("TC-R12-04 改动1 负向零回退 Tee -FilePath CFG 仍命中", _is_approve(res) or _is_block(res))
+    # r11 锁形零回退：c3 反向锁形 / B 双标志
+    ok = _call("terminal", {"command": "Copy-Item -Path " + CFG + " -Destination " + WS}) is None \
+        and _call("terminal", {"command": "Copy-Item -Container " + CFG + " -Destination " + BAK}) is None
+    _rec("TC-R12-05 r11 锁形零回退 c3 反向 + B 双标志（PASS 保持）", ok)
+    # 改动2 F-11-1：冒号粘连（含引号值）+ a4 等号形附录锁
+    res = _call("terminal", {"command": "Copy-Item -Destination:" + CFG + " " + WS})
+    _rec("TC-R12-06 F-11-1 冒号粘连 -Destination:CFG 前置 → 命中弹卡", _is_approve(res))
+    res = _call("terminal", {"command": "Tee-Object -FilePath:" + CFG + " -InputObject x"})
+    _rec("TC-R12-07 F-11-1 Tee -FilePath:CFG → 命中", _is_approve(res) or _is_block(res))
+    res = _call("terminal", {"command": "Copy-Item -Destination:" + chr(39) + CFG + chr(39) + " " + WS})
+    _rec("TC-R12-08 F-11-1 冒号粘连引号值 → 命中弹卡", _is_approve(res))
+    ok = _call("terminal", {"command": "Copy-Item -Destination=" + CFG + " " + WS}) is None \
+        and _call("terminal", {"command": "Copy-Item -Destination:" + WS + " " + BAK}) is None
+    _rec("TC-R12-09 F-11-1 负例 等号形附录锁 + 冒号非保护值不命中", ok)
+    # 改动2 组合面：冒号粘连载体
+    res = _call("terminal", {"command": 'pwsh -Command "Copy-Item -Destination:' + CFG + " " + WS + '"'})
+    _rec("TC-R12-10 F-11-1 pwsh 载体内冒号粘连 → 命中", _is_approve(res) or _is_block(res))
+    # 改动3 F-11-2：引号选项词（双/单引号、长形）+ 门外/红线/非保护负例
+    ok = _is_block(_call("terminal", {"command": 'curl "-o" ' + CFG + " http://x"})) \
+        and _is_block(_call("terminal", {"command": "curl '-o' " + CFG + " http://x"}))
+    _rec("TC-R12-11 F-11-2 curl 引号包 -o（双/单引号）→ block", ok)
+    res = _call("terminal", {"command": 'curl "--output" ' + CFG + " http://x"})
+    _rec("TC-R12-12 F-11-2 引号包 --output 长形 → block", _is_block(res))
+    ok = _call("terminal", {"command": 'grep "-o" ' + CFG}) is None \
+        and _call("terminal", {"command": 'curl "-O" http://x/a.zip'}) is None \
+        and _call("terminal", {"command": 'curl "-o" ' + WS + " http://x"}) is None
+    _rec("TC-R12-13 F-11-2 负例 grep 门外/-O 红线/非保护值 → 放行", ok)
+    # 改动4 F-11-4：cluster 尾 o 空格值四入形 + 数字尾 + 归正不回潮
+    ok = _is_block(_call("terminal", {"command": "curl -so " + CFG + " http://x"})) \
+        and _is_block(_call("terminal", {"command": "curl -sSLfo " + CFG + " http://x"}))
+    _rec("TC-R12-14 F-11-4 curl -so/-sSLfo CFG → block", ok)
+    ok = _is_block(_call("terminal", {"command": "wget -qO " + CFG + " http://x"})) \
+        and _is_block(_call("terminal", {"command": "sort -ro " + CFG + " d.txt"}))
+    _rec("TC-R12-15 F-11-4 wget -qO、sort -ro → block", ok)
+    ok = _call("terminal", {"command": "curl -so " + WS + " http://x"}) is None \
+        and _call("terminal", {"command": "grep -o " + CFG}) is None \
+        and _call("terminal", {"command": "mount -o rem,rw /x"}) is None \
+        and _call("terminal", {"command": "curl -O http://x/a.zip"}) is None
+    _rec("TC-R12-16 F-11-4 负例 非保护/门外/mount/-O 红线 → 放行", ok)
+    ok = _call("terminal", {"command": "sort D:/myagent/workspace/o " + CFG}) is None \
+        and _call("terminal", {"command": "curl http://x/o " + CFG}) is None
+    _rec("TC-R12-17 F-10-2 归正不回潮 sort ws/o、http://x/o 保持放行", ok)
+    res = _call("terminal", {"command": "curl --http1.0 " + CFG + " -sSO"})
+    _rec("TC-R12-18 F-11-4 数字尾 --http1.0 不误命中 + 尾裸 -o 族无值形保持", res is None)
+    # 跨改动组合 + 红线三形（改动1×载体、改动3×粘连链零回退、Set-Content 不回潮）
+    res = _call("terminal", {"command": "sudo Copy-Item -Destination:" + GD + " " + WS})
+    _rec("TC-R12-19 组合 载体剥离链×冒号粘连守卫目录 → 命中·复制族向", _is_approve(res))
+    ok = _is_block(_call("terminal", {"command": "curl -sSL -o" + CFG + " http://x"})) \
+        and _is_block(_call("terminal", {"command": "sort /O " + CFG + " d.txt"})) \
+        and _is_block(_call("terminal", {"command": "Set-Content " + CFG + " x"}))
+    _rec("TC-R12-20 锁形零回退 粘连链/F-9-3 /O/Set-Content 不回潮", ok)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1295,6 +1365,7 @@ run_r8_fixes()
 run_r9_fixes()
 run_r10_fixes()
 run_r11_fixes()
+run_r12_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

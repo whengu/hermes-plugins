@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-09-22 round12（round11 双路 CR 修复 F-11-1/2/3/4 + Q-11-1，fix-012）
+
+**round11 复审**：安全路 CHANGES REQUIRED（F-11-1~4，均实测复现+r9/r10/r11 三代
+对照+pwsh/curl 活证）+ 质量路 CHANGES REQUIRED（Q-11-1 MED，与 F-11-3 同根）+
+NOTES 文档级；PM pm_verify_012 二十三形基线全实测背书。
+
+**修复项（TC-R12 20 条 + _verify_r12 53/53，门禁实跑全绿）**：
+- 改动1（F-11-3+Q-11-1，MED 向红线）：_PS_NAMED_TARGET_RE 五词表收窄为
+  `-(?:Destination|FilePath)\s*$`（1 行；ANY_RE 五词不动，末位否决仍需源参在场
+  信号）。c1/c2/c5 源位误弹归正 PASS；c4/c6 封堵与 c3/B 锁形零回退。
+  **根因链如实记载**：五词表出自 PM 所写 fix-011-input §21 规格清单——把
+  -Path/-LiteralPath/-Container（PS 语义恒为源参/非目标词）与 Destination/FilePath
+  并列作「命名目标」绑定判据，规格里已注明；子代理照图落地无越权，失实在立项
+  规格面（Q-11-1「第 4 次名实型缺陷，此次行为向」）。
+- 改动2（F-11-1，LOW 旁路）：新增 _GLUED_NAMED_RE 冒号粘连提取
+  `^-(?:Destination|FilePath):(['\"]?)(\S+?)\1$`（比照 _GLUED_T_RE 先例，收集位点
+  引号优先于 t/o 误提取；命名支判定 or 本 token 即绑定值）。a1/a2/a3（含引号值）
+  → 命中弹卡；a4 等号形 pwsh 活证拒绝保持附录；`-Destination:<非保护>` 不命中。
+- 改动3（F-11-2，LOW 旁路）：新增 _OUTPUT_QUOTED_RE
+  `[\x27\x22](?:-[oO]|--output(?:-document)?)[\x27\x22]\s*$` 并入输出标志判定式同款
+  or 支。
+  b1/b2/b3 → block；b4/b5 与非保护值负例保持 PASS；不做通用引号剥离（F-7-2 禁令
+  不回潮）。**采 PM 修正**：sa-0 提案 `(?:...)?` 把选项内容设为可选（命中任意
+  引号 token），内容部分不得可选——提案缺陷弃用。
+- 改动4（F-11-4，MED 旁路）：_OUTPUT_FLAG_RE 短形组并 dash 专属 cluster 尾 o 支
+  `(?:^|(?<=\s))-{1,2}[a-zA-Z]*o`（斜杠方言不参与——cmd 无 cluster 语义，
+  F-10-2 ws/o 归正不回潮；[a-zA-Z]* 不吃数字，--http1.0 不误命中）。
+  d1~d4 → block；d5~d10 负例/归正形全保持。
+- NOTES（fix-012-input §46）：fix-011.md §0 补 [DONE §0]；§2「TC-R11-12」→
+  TC-R11-15 编号笔误修正（实核：误点名仅 §2 一处，§0 表行 s 依据列未挂编号，
+  按实登记不虚构第二处）。
+
 ## 2026-09-22 round11（round10 双路回归修复 F-10-1/F-10-2，fix-011）
 
 **round10 复审**：双路同根互证 CHANGES REQUIRED——安全路 F-10-1（MED）/F-10-2
