@@ -278,7 +278,8 @@ _PS_TAIL_ANCHOR_RES = {c: re.compile(r"-(?:%s)\s*$" % w, re.IGNORECASE)
                        for c, w in _PS_TARGET_FLAGS.items()}
 _PS_TGT_BIND_RES = {c: re.compile(r"-(?:%s)(?:\s|[:=])" % w, re.IGNORECASE)
                     for c, w in _PS_TARGET_FLAGS.items()}
-# F-11-1（round12）冒号粘连按 cmd 分表（round13 参数化 _GLUED_NAMED_RE）：
+# F-11-1（round12）冒号粘连按 cmd 分表（round13 参数化，实名 _PS_GLUED_NAMED_RES，
+# Q13-E 注释实名修正——旧全局 _GLUED_NAMED_RE 已删）：
 # `-Destination:<值>`/`-LiteralPath:<值>`（含引号值）；等号形活证拒绝=附录不修。
 _PS_GLUED_NAMED_RES = {c: re.compile(r"^-(?:%s):(['\"]?)(\S+?)\1$" % w, re.IGNORECASE)
                        for c, w in _PS_TARGET_FLAGS.items()}
@@ -636,7 +637,12 @@ _OUTPUT_FLAG_RE = re.compile(
 # F-11-2（round12）：引号包输出选项词 `curl "-o" <file>`（shell 剥引号后与裸 -o
 # 同义，curl 活证真写；比照 _COPY_T_QUOTED_RE 先例，整词成对、内容不可选、不做
 # 通用引号剥离——F-7-2 禁令不回潮）。
-_OUTPUT_QUOTED_RE = re.compile(r"[\x27\x22](?:-[oO]|--output(?:-document)?)[\x27\x22]\s*$")
+# Q13-A（round14）：并引号包 cluster 尾 o 支 `["'][-]?[a-zA-Z]*[oO]["']`——引号内
+# = cluster 字母串且尾字母 o/O（`curl "-so" <CFG>` 与裸 -so 同义，活证真写）；
+# 字符类比照 _OUTPUT_FLAG_RE dash cluster 支同款，单 dash 专属（双 dash 红线不扩），
+# 值走既有后随 token 判定；整支在 _OUTPUT_FLAG_CMDS_RE 门后，门外 grep "-so" 零扰动。
+_OUTPUT_QUOTED_RE = re.compile(
+    r"[\x27\x22](?:-[oO]|--output(?:-document)?|[-]?[a-zA-Z]*[oO])[\x27\x22]\s*$")
 _OUTPUT_FLAG_EQ_RE = re.compile(
     r"(?:--output-document|--output|-o|-O)=(.*)$", re.IGNORECASE)
 
@@ -653,8 +659,10 @@ def _command_word(seg: str):
 
 
 def _pair_unquote(s: str) -> str:
-    """F-12-3（round13）：剥**成对**外层引号一处——仅匹配输入（_GLUED_O_RE 等
-    选项粘连判定）；token 化与 norm 链不经过此处（F-7-2 通用剥离禁令不回潮）。"""
+    """F-12-3（round13）建，F-13-S1（round14）接线**粘连入口全族**：剥**成对**
+    外层引号一处——仅供匹配视图（_GLUED_O_RE/_GLUED_T_RE/of=/--target-directory=/
+    _OUTPUT_FLAG_EQ_RE 各支匹配输入）；token 化与 norm 链不经过此处（F-7-2 通用
+    剥离禁令不回潮）。"""
     qm = _PAIR_QUOTE_RE.match(s)
     return qm.group(2) if qm else s
 
@@ -708,7 +716,9 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     if before.endswith("<"):
         return False
     # dd of=路径 → 写
-    if raw.lower().startswith("of=") and _DD_RE.search(before):
+    # F-13-S1-A3（round14）：匹配输入接 _pair_unquote（仅判定视图，引号整包
+    # `dd "of=<CFG>"` 与裸形同义；norm 链不经过——F-7-2 禁令）
+    if _pair_unquote(raw).lower().startswith("of=") and _DD_RE.search(before):
         return True
     # tee 目标 → 写（全部位参皆目标，POSIX tee 语义；F-9-4 round10：判据由
     # "前一词==tee"改为"段命令词==tee"，非末位多目标形不再漏拦）
@@ -719,13 +729,15 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     if _OUTPUT_FLAG_CMDS_RE.search(before):
         # F-11-2（round12）：or 支=引号包选项词（curl "-o" <CFG>，shell 剥引号
         # 后与裸 -o 同义；比照 _COPY_T_QUOTED_RE 先例，不做通用引号剥离）
+        _raw_ou = _pair_unquote(raw)   # F-13-S1-A4：--output= 长形引号整包（curl 端
+        # 死选项 `=` 并入文件名活证，block=无害多防，比照 r13 -o= 附录句）
         if (_OUTPUT_FLAG_RE.search(before)
-                or _OUTPUT_FLAG_EQ_RE.match(raw)
+                or _OUTPUT_FLAG_EQ_RE.match(_raw_ou)
                 # F-12-3（round13）：匹配输入剥成对引号一处（`curl "-o<CFG>"` 与
                 # 裸形同义；整支有 _OUTPUT_FLAG_CMDS_RE 门=仅 curl/wget/sort，零
                 # 扰动复制族；token 化/norm 链不经过此——F-7-2 禁令）
-                or _GLUED_O_RE.match(_pair_unquote(raw))   # S-1：-o<file> 粘连形
-                or _OUTPUT_QUOTED_RE.search(before)):  # F-11-2：引号选项词形
+                or _GLUED_O_RE.match(_raw_ou)   # S-1：-o<file> 粘连形
+                or _OUTPUT_QUOTED_RE.search(before)):  # F-11-2：引号选项词形（r14 并 cluster 尾 o）
             return True
     # 原位编辑 sed -i / perl -pi → 写
     if _SED_PERL_RE.search(before) and (
@@ -780,9 +792,14 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
                 and (norm == home or norm.startswith(home + _SEP)
                      or _is_guard_dir_target(norm))
                 and (_COPY_T_RE.search(before)
-                     or raw.lower().startswith("--target-directory=")
-                          or _GLUED_T_RE.match(raw)      # Q-6-1：本 token 即粘连目标形
-                          or _COPY_T_QUOTED_RE.search(before))):  # 引号选项形
+                     # F-13-S1-A2（round14）：--target-directory= 前缀支匹配输入接
+                     # _pair_unquote（仅判定视图，`cp "--target-directory=<CFG>"`
+                     # 与裸形同义；norm 链不经过——F-7-2 禁令）
+                     or _pair_unquote(raw).lower().startswith("--target-directory=")
+                     # Q-6-1：本 token 即粘连目标形；F-13-S1-A1（round14）匹配输入
+                     # 接 _pair_unquote（cp x "-t<DIR>" 引号整包，含守卫缴械形）
+                     or _GLUED_T_RE.match(_pair_unquote(raw))
+                     or _COPY_T_QUOTED_RE.search(before))):  # 引号选项形
             return True
         return False
     if cmd in _MOVE_CMDS:
@@ -966,27 +983,34 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
     protected = []
     for m in _PATH_TOKEN_RE.finditer(seg):
         raw = m.group(0)
-        # MED-2：= 粘连的输出标志形态（curl --output=路径 等）提取真实路径
-        eq_m = _OUTPUT_FLAG_EQ_RE.match(raw)
+        # MED-2：= 粘连的输出标志形态（curl --output=路径 等）提取真实路径。
+        # F-13-S1（round14）：仅**前缀提取支**（eq/of=/--target-directory=/=粘连形）
+        # 的匹配输入改剥对引号视图 _raw_ou——剥后内容本身不再带外层引号，norm 的
+        # 剥壳结果逐字节不变（token 化仍走 raw，F-7-2 禁令不回潮）。
+        _raw_ou = _pair_unquote(raw)
+        eq_m = _OUTPUT_FLAG_EQ_RE.match(_raw_ou)
         if eq_m:
             norm_raw = eq_m.group(1)
-        elif raw.lower().startswith("of="):
-            norm_raw = raw[3:]
-        elif raw.lower().startswith("--target-directory="):
-            norm_raw = raw.split("=", 1)[1]   # C3：cp --target-directory=<dir> 粘连
-        elif raw.startswith("=") and _COPY_T_QUOTED_RE.search(seg[:m.start()]):
+        elif _raw_ou.lower().startswith("of="):
+            norm_raw = _raw_ou[3:]
+        elif _raw_ou.lower().startswith("--target-directory="):
+            norm_raw = _raw_ou.split("=", 1)[1]   # C3：cp --target-directory=<dir> 粘连
+        elif _raw_ou.startswith("=") and _COPY_T_QUOTED_RE.search(seg[:m.start()]):
             # F-7-2（round8 灰区判=两行可修则做）：引号选项词后紧跟 = 粘连形
             # cp "--target-directory"=<dir>——本 token 值即 = 后路径（选项词在
             # 前一 token；判定仍由 -t 分支 _COPY_T_QUOTED_RE 门把关，保守收集）。
-            norm_raw = raw[1:]
+            norm_raw = _raw_ou[1:]
         else:
             # F-12-3（round13）：_GLUED_O_RE 匹配输入剥**成对**外层引号一处（比照
             # _GLUED_T_RE 引号先例语义）——引号吞选项粘连值形 `curl "-so<CFG>"` 与
             # 裸形同义（shell 剥引号实证）；token 化与 norm 链不经过此（F-7-2 禁令）。
             # 复制族 cmd 不启用：-o 非其选项语义，零扰动。
+            # F-13-S1-A1（round14）：_GLUED_T_RE 匹配输入同步接 _pair_unquote——
+            # 粘连入口全族同法（-o 族 r13 已接、-t 族本轮补齐，覆盖不对称教训固化句
+            # 见 CHANGELOG round14）；复制族门后，token 化/norm 链不经过。
             cmdw = _command_word(seg)
             _ou = raw if cmdw in _COPY_CMDS else _pair_unquote(raw)
-            gm = _GLUED_T_RE.match(raw) or _GLUED_O_RE.match(_ou)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
+            gm = _GLUED_T_RE.match(_pair_unquote(raw)) or _GLUED_O_RE.match(_ou)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
             # F-11-1（round12）建支，round13 per-cmd 化：冒号粘连值段按本 cmd 目标
             # 词表匹配（引号优先于 t/o 误提取）——非本 cmd 目标族标志不提取。
             gn = _PS_GLUED_NAMED_RES.get(cmdw)

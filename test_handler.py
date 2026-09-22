@@ -1228,6 +1228,64 @@ def run_r13_fixes():
          _call("terminal", {"command": 'Copy-Item "-Destination" ' + CFG + " " + WS}) is None)
 
 
+def run_r14_fixes():
+    """round14 修复回归（F-13-S1/Q13-A/B：粘连入口引号整包全族接 _pair_unquote
+    + 引号包 cluster 尾 o 选项词）。改动A/B 正反两面各锁；断言值=施工后实跑核对。"""
+    B = chr(92)
+    HD = "D:" + B + "myagent" + B + ".hermes" + B + "plugins" + B + "write-guard" + B + "handler.py"
+    PDIR = "D:" + B + "myagent" + B + ".hermes" + B + "plugins" + B + "write-guard"
+    CFG = "D:" + B + "myagent" + B + ".hermes" + B + "config.yaml"
+    WS = "D:" + B + "myagent" + B + "workspace"
+    CFGS = "D:/myagent/.hermes/config.yaml"   # 斜杠形（值段展示口径同 pm_verify_014）
+    def hit(c):
+        r = _call("terminal", {"command": c})
+        return _is_approve(r) or _is_block(r)
+    # ---- 改动A −t 族（F-13-S1-A1）：_GLUED_T_RE 匹配输入接剥对引号
+    _rec("TC-R14-01 A1 cp \"-t<守卫目录>/\" 引号整包 → 命中（缴械向）",
+         hit('cp ok.txt "-t' + PDIR + '/"'))
+    _rec("TC-R14-02 A2 cp '-t<守卫目录>' 单引号整包 → 命中",
+         hit("cp ok.txt '-t" + PDIR + "'"))
+    _rec("TC-R14-03 A3 install '-t<守卫目录>/' 粘连族门 → 命中",
+         hit("install '-t" + PDIR + "/' ok.txt"))
+    _rec("TC-R14-04 A6 cp '-t=<守卫目录>' 混粘 → 命中",
+         hit("cp '-t=" + PDIR + "' ok.txt"))
+    _rec("TC-R14-05 A7 bash -c 载体内 cp \"-t<守卫目录>/\" → 命中",
+         hit("bash -c '" + 'cp ok.txt "-t' + PDIR + '/"' + "'"))
+    _rec("TC-R14-06 A8 cp \"-t<非保护ws>/x\" 引号整包零误拦 → 放行",
+         _call("terminal", {"command": 'cp ok.txt "-t' + WS + '/x"'}) is None)
+    # ---- 改动A --target-directory= / of= 支（F-13-S1-A2/A3）
+    _rec("TC-R14-07 A4 cp \"--target-directory=<CFG>\" → 命中",
+         hit('cp "--target-directory=' + CFG + '" ok.txt'))
+    _rec("TC-R14-08 A5 dd \"of=<CFG>\" → block（反缴械）",
+         _is_block(_call("terminal", {"command": 'dd "of=' + CFG + '" if=ok.txt bs=1 count=4'})))
+    _rec("TC-R14-09 A9 dd \"of=<守卫源码>\" 反缴械 → block",
+         _is_block(_call("terminal", {"command": 'dd "of=' + HD + '" if=x bs=1 count=4'})))
+    # ---- 改动A curl 长形支（F-13-S1-A4，死选项=无害多防，附录向）
+    _rec("TC-R14-10 A10 curl \"--output=<CFG>\" 引号整包 → block",
+         _is_block(_call("terminal", {"command": 'curl "--output=' + CFG + '" http://x'})))
+    # ---- 改动B：_OUTPUT_QUOTED_RE 并 cluster 尾 o 支（Q13-A）
+    _rec("TC-R14-11 B curl \"-so\"/\"-sSo\" 引号 cluster+空格值 → block",
+         _is_block(_call("terminal", {"command": 'curl "-so" ' + CFGS + ' http://x'}))
+         and _is_block(_call("terminal", {"command": 'curl "-sSo" ' + CFGS + ' http://x'})))
+    _rec("TC-R14-12 B wget \"-qO\"、sort \"-ro\" → block",
+         _is_block(_call("terminal", {"command": 'wget "-qO" ' + CFGS + ' http://x'}))
+         and _is_block(_call("terminal", {"command": 'sort "-ro" ' + CFGS + ' d.txt'})))
+    _rec("TC-R14-13 B 载体内 curl \"-so\" <CFG> → block",
+         _is_block(_call("terminal", {"command": "bash -c '" + 'curl "-so" ' + CFGS + ' http://x' + "'"})))
+    _rec("TC-R14-14 B 负例 cluster 尾非 o：curl \"-oL\"、grep \"-o\"/\"-so\" 门外 → 放行",
+         _call("terminal", {"command": 'curl "-oL" ' + CFGS}) is None
+         and _call("terminal", {"command": 'grep "-o" ' + CFGS}) is None
+         and _call("terminal", {"command": 'grep "-so" ' + CFGS}) is None)
+    # ---- 锁形：r7~r13 粘连/引号面不回退（穿插劈 token=排除范围登记向）
+    _rec("TC-R14-15 锁形不回退：裸 -t/--target-dir= 等号/引号选项分列/curl \"-o<CFG>\" r13-E1",
+         hit("cp ok.txt -t" + PDIR)
+         and hit("cp --target-directory=" + CFG + " ok.txt")
+         and hit("cp '-t' " + PDIR + " ok.txt")
+         and _is_block(_call("terminal", {"command": 'curl "-o' + CFG + '" http://x'})))
+    _rec("TC-R14-16 排除范围锁：劈 token 穿插族维持 PASS（boundary 登记不回潮）",
+         _call("terminal", {"command": 'cp "-t' + PDIR[:6] + '"x/' + PDIR[6:] + chr(92) + "' ok.txt"}) is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1424,6 +1482,7 @@ run_r10_fixes()
 run_r11_fixes()
 run_r12_fixes()
 run_r13_fixes()
+run_r14_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

@@ -8,6 +8,70 @@
 
 ---
 
+## 2026-09-23 round14（安全路 F-13-S1 + 质量路 Q13-A/B 合并修复：粘连入口引号整包全族封堵，fix-014）
+
+**立项**：round13 双路同洞互证——安全路 review-013-sec F-13-S1（HIGH，`-t`/
+`--target-directory=`/`dd of=`/`install -t` 粘连支引号整包体系性漏拦，bash 活证真写，
+含守卫缴械形 `cp x "-t<守卫目录>"`）+ 质量路 Q13-A（curl/wget/sort 引号包 cluster
+选项词+空格分离值，curl 活证 rc=0 实写）/Q13-B（`cp "-tdst"` 粘连 cluster 引号包，
+cp 活证真写）；PM 第三路复验 pm_verify_014 基线 **13 靶心 FAIL / 16 ok**。三代既有
+（94998f5/4e254c8/10a2094 同 PASS），**非 round13 引入**——系 r13 改动B 只接
+`_GLUED_O_RE` 匹配输入、同族邻支未接（覆盖不对称实锤，见下教训固化句）。
+
+**修复项（TC-R14 16 条 + _verify_r14 43/43 + pm_verify_014 27/27，门禁实跑全绿）**：
+- 改动A（主修，与 r13 改动B 严格同法同纪律）：`_pair_unquote` 接线**粘连入口全族**
+  四处匹配输入——`_GLUED_T_RE`（A1，`-t<dir>` 粘连，cp/install/robocopy 族门后）、
+  `--target-directory=` 前缀支（A2，startswith 锚先剥再判）、`of=` 前缀支（A3，dd
+  写目标）、`_OUTPUT_FLAG_EQ_RE` 长形 `--output=` 支（A4）。均**仅判定视图**：token
+  化与 norm 链不经过（F-7-2 通用剥离禁令不回潮）；提取位点（`_judge_terminal_segment`
+  前缀提取支）同步改剥对引号视图 `_raw_ou`，norm 剥壳结果逐字节不变。T1~T7/T15/T17
+  → 命中；K1~K5/K7~K8/T16/K10~K11 不回退。
+- 改动B：`_OUTPUT_QUOTED_RE` 内容段并一个 cluster 尾 o 支
+  `[\x27\x22](?:-[oO]|--output(?:-document)?|[-]?[a-zA-Z]*[oO])[\x27\x22]\s*$`
+  ——引号内=cluster 字母串且**尾字母 o/O**（`curl "-so" <CFG>` 与裸 `-so` 同义），
+  字符类比照 `_OUTPUT_FLAG_RE` dash cluster 支同款，**单 dash 专属**（双 dash 与
+  `-O` 大写红线语义不扩），值走既有后随 token 判定，整支在 `_OUTPUT_FLAG_CMDS_RE`
+  门后（门外 `grep "-so"` 零扰动）。T11~T14 → block；负例 T18 `curl "-oL"`、
+  K9/K11 grep 门外、`"-H"` 任意引号词保持 PASS。
+- **附录登记（PM 实测，比照 r13 `=` 形附录句）**：改动A-A4 `curl "--output=<CFG>"`
+  长形引号整包在 curl 8.1.2 Windows 端是**死选项**（`=` 并入输出文件名，与 `-o=`
+  同族），不构成对 `<CFG>` 的真写——判 block 属**无害多防**（不可运行形弹卡零代价），
+  与本轮靶心的 `-t`/`of=`/`--target-directory=` 活证真写族区别登记，禁据此扩长表。
+  同理维持不修面：PS 域等号形 `-Destination=`（pwsh 拒绝绑定）、`sort "-t<dir>"`
+  （`-t` 非 sort 输出语义，门外）、劈 token 穿插族（`cp "-t..."x/...` = boundary
+  排除范围，TC-R14-16/_verify_r14 双锁 PASS 不回潮）。
+- 改动C（NOTES 随批，全部实测背书）：Q13-C 补账（回填 reviews/fix-013.md
+  §A/§B/§N/§V 四节，权威来源=CHANGELOG round13 节 + git diff 10a2094 +
+  pm_verify_013 实跑值，Z2 行「修后预期」回填终值 PASS 注「绑定错误零写语义正确」）；
+  Q13-D 口径句（见 round13 节「口径调和」补句）；Q13-E 注释实名（handler.py
+  `_PS_GLUED_NAMED_RES` 邻域注释旧引用 `_GLUED_NAMED_RE` 改实名 + 幽灵 sha
+  `8dde55b`→`8dde55e` 修正，已在 fix-013.md 头部落地）。
+
+**教训固化句（本轮起入验收纪律）**：**引号剥离类修复，验收面必须扫全族粘连入口**
+——`-o` / `-t` / `--target-directory` / `of=` / 冒号形 / cluster+空格值 六类逐一过
+**逐分支翻转表 + 逐分支活证**，不接受「同族一支已修」作为邻支免测理由。本轮
+F-13-S1 的根因正是 r13 改动B 修了 `_GLUED_O_RE` 而未扫 `_GLUED_T_RE`/两枚 `=`
+前缀支（覆盖不对称）；与 r11/r12 两案同构：**修复动作只落在触发样本上，
+族内邻支成为下一个洞**。
+
+**过程（handler.py 零改动之外的收尾）**：代码面（改动A/B）在 round14 施工段已入
+- 端活证第 7 项终态登记（PM 门禁窗，2026-09-23）：收尾窗与 PM 现场复跑两次均被
+  approvals manual 审批卡超时拦截（无人应答，非 write-guard 拦截、非修复缺陷）——
+  不重试不绕行；该项以立项前活证链（ecca470：cp "-t…" / dd "of=…" 真写落盘实证）+
+  round14 双路复审任务书「每条 finding 必端活证」硬要求兜底，现场复跑待用户在会话时。
+工作树并通过 pm_verify_014 靶心全翻转；本轮收尾批补齐 TC-R14（16 条）+ _verify_r14
+（43 形）+ 本节 + fix-013 四节回填 + reviews/fix-014.md 制品，PM 复跑门禁数组见下表。
+
+| # | 命令 | 结果 |
+|---|------|------|
+| 1 | python reviews/fix014-scratch/pm_verify_014.py | 通过 27 失败 0（29 形表内 27 项断言，T/K 全达） |
+| 2 | python test_handler.py | ALL PASS (29 scan + 4 hook + 363 new，含 TC-R14 16 条) |
+| 3 | python _verify_r14.py | 通过 43 失败 0（含红线四形 + 零误拦形 on_pre_tool_call） |
+| 4 | python reviews/fix013-scratch/pm_verify_013.py | 通过 30 失败 0（不回潮） |
+| 5 | python _verify_r13/r12/r11/r10/r9/r8/r7/r5/r3 | 41/53/43/46/46/30/30/28/25 全零失败 |
+| 6 | python reviews/fix012-scratch/pm_verify_012.py | 23 形与 round12 期望一致，无回退 |
+| 7 | 端活证口径 | 真写可运行性沿用立项前 PM 活证链（bash `cp "-t…"`/dd `of=`/curl "-so" 实写与守卫缴械实锤，见 fix-014-input 立项依据 + ecca470 档案）；收尾窗内沙箱写复跑命令未获批准**未复跑**——修复效果以第 1/3 行双翻转表 + 第 4~6 行回退表背书，不据旧证扩称新测（如实） |
+
 ## 2026-09-23 round13（安全路 F-12-1/2/3 修复：PS per-cmd 目标表 + 引号粘连选项值，fix-013）
 
 **立项**：安全路 round12 终审 CHANGES REQUIRED（F-12-1/F-12-2 = PM X-13 候选独立
@@ -42,6 +106,11 @@
   本身把某一维语义压成更粗的全局形」引出新洞。固化教训：**收窄/放宽词表类修复，
   验收面必须含 per-cmd 语义活证（本例 pwsh 一条 `-LiteralPath` Tee 真写即戳穿
   全局表），不能只跑翻转表**。
+  - 口径调和（Q13-D，round14 补）：本句「第 3 次」分母 = **词表全局化类同构**
+    （r10→r11/r11→r12/r12→r13 三次同一失效模式）；review-012-sec 裁决句「第 5 次」
+    分母 = **全仓「每轮修复引入新回归」全量规律**（含名实/覆盖类）。两口径并行
+    不冲突，各自注明。计数边界显式判定：r9 S-2 扩词引入的 F-9-1 源位误拦**不计入**
+    词表全局化类——S-2 属「出现即写」扩集语义（扩而非收窄/压平），失效模式不同族。
 - **curl `=` 形附录（PM 活证，不立项登记）**：`curl -sfo=<CFG>` 判定端不拦与真实
   语义一致——Windows curl 8.1.2 不吃 cluster 内 `=` 分隔，等号并入输出文件名
   （实测落盘 `=_dst2.txt`），不构成对 `<CFG>` 的写；PS 域等号形（-Destination=）

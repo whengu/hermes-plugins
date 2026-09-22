@@ -52,4 +52,4 @@ for label, cmd, want in cases:
     okv = {"hit": got in ("approve", "block"), "pass": got == "PASS", "any": True}[want]
     nf += (not okv)
     print(f"{'ok ' if okv else 'FAIL'} {label:42s} -> {got:8s} want {want}")
-print(f"通过 {len(cases)-nf} 失败 {nf} {[] if nf else '(有失败)'}")
+print(f"通过 {len(cases)-nf} 失败 {nf} {[] if not nf else '(有失败)'}")
