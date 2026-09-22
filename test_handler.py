@@ -1040,6 +1040,67 @@ def run_r10_fixes():
     _rec("TC-R10-15 F-9-4 负例 tee 非保护目标 → 放行", res is None)
 
 
+def run_r11_fixes():
+    """round11 双路回归修复回归（F-10-1/F-10-2）。"""
+    B = chr(92)
+    GD = "D:" + B + "myagent" + B + ".hermes" + B + "plugins" + B + "write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    WS = "D:/myagent/workspace/a.txt"
+    # F-10-1 ①前置漏拦封堵（命名目标支）
+    res = _call("terminal", {"command": "Copy-Item -Destination " + CFG + " " + WS})
+    _rec("TC-R11-01 F-10-1 前置 -Destination CFG → 命中弹卡", _is_approve(res) or _is_block(res))
+    res = _call("terminal", {"command": "Tee-Object -FilePath " + CFG + " -InputObject x"})
+    _rec("TC-R11-02 F-10-1 Tee-Object -FilePath 前置 → 命中", _is_approve(res) or _is_block(res))
+    res = _call("terminal", {"command": 'pwsh -Command "Copy-Item -Destination ' + CFG + " " + WS + '"'})
+    _rec("TC-R11-03 F-10-1 pwsh 载体内前置 → 命中", _is_approve(res) or _is_block(res))
+    res = _call("terminal", {"command": 'sudo pwsh -Command "Copy-Item -Destination ' + CFG + " " + WS + '"'})
+    _rec("TC-R11-04 F-10-1 sudo×载体前置 → 命中", _is_approve(res) or _is_block(res))
+    # F-10-1 ②反向误弹归正（红线：CFG 是源必须放行，F-9-1 不回潮）
+    res = _call("terminal", {"command": "Copy-Item -Destination " + WS + " " + CFG})
+    _rec("TC-R11-05 F-10-1 反向 -Destination 非保护 CFG（源位）→ 放行（红线）", res is None)
+    res = _call("terminal", {"command": "Copy-Item -Container " + CFG + " -Destination " + WS})
+    _rec("TC-R11-06 F-10-1 双标志 -Container CFG 目标另有其主 → 放行（r10 锁形 B 保持）", res is None)
+    # F-10-1 ③尾位锁形零回退 + 变体随批
+    res = _call("terminal", {"command": "Copy-Item evil.txt -Destination " + CFG})
+    _rec("TC-R11-07 F-10-1 尾位 -Destination CFG 零回退 → 弹卡", _is_approve(res))
+    res = _call("terminal", {"command": "Copy-Item -Destination " + GD + " " + WS})
+    _rec("TC-R11-08 F-10-1 前置守卫目录目标 → 命中·复制族向", _is_approve(res) or _is_block(res))
+    res = _call("terminal", {"command": "copy-item -destination " + CFG + " " + WS})
+    _rec("TC-R11-09 F-10-1 小写 cmdlet/flag 变体 → 命中（IGNORECASE）", _is_approve(res) or _is_block(res))
+    res = _call("terminal", {"command": "cd D:" + B + "myagent" + "; Copy-Item -Destination " + CFG + " " + WS})
+    _rec("TC-R11-10 F-10-1 cd 链式前置 → 命中", _is_approve(res) or _is_block(res))
+    # F-10-1 ④Set-Content 出现即写不回潮 + cp 族零差
+    ok = _is_block(_call("terminal", {"command": "Set-Content " + CFG + " x"})) \
+        and _is_block(_call("terminal", {"command": "Set-Content -Path " + CFG + " -Value x"}))
+    _rec("TC-R11-11 F-10-1 负例 Set-Content 族出现即写不回潮 → block", ok)
+    ok = _call("terminal", {"command": "cp " + CFG + " " + WS}) is None \
+        and _is_approve(_call("terminal", {"command": "cp " + WS + " " + CFG})) \
+        and _call("terminal", {"command": "rsync -av " + CFG + " " + WS}) is None
+    _rec("TC-R11-12 F-10-1 负例 cp/rsync 无命名标志路径零行为差", ok)
+    # F-10-2 四形归正 + 附录⑥（实测归正向锁定，§2 落盘一致）
+    ok = _call("terminal", {"command": "sort D:/myagent/workspace/o " + CFG}) is None \
+        and _call("terminal", {"command": "sort D:/myagent/workspace/O " + CFG}) is None
+    _rec("TC-R11-13 F-10-2 sort 路径 …/o、…/O 尾缀误弹 → 归正放行", ok)
+    ok = _call("terminal", {"command": "curl http://x/o " + CFG}) is None \
+        and _call("terminal", {"command": "wget http://x/f/o " + CFG}) is None
+    _rec("TC-R11-14 F-10-2 curl/wget URL …/o 尾缀误弹 → 归正放行", ok)
+    res = _call("terminal", {"command": "sort D:/myagent/workspace/my-dir-o " + CFG})
+    _rec("TC-R11-15 F-10-2 附录⑥ dash 同根旧 FP → 同约束归正放行（实测）", res is None)
+    # cluster 粘连锁形 + 回潮锁形
+    ok = _is_block(_call("terminal", {"command": "curl -sSL -o" + CFG + " http://x"})) \
+        and _is_block(_call("terminal", {"command": "sort /O " + CFG + " d.txt"})) \
+        and _is_block(_call("terminal", {"command": "sort -o " + CFG + " d.txt"})) \
+        and _call("terminal", {"command": "curl -O http://x/a.zip"}) is None
+    _rec("TC-R11-16 F-10-2 锁形零回退：粘连/独立 /O/-o 仍 block、-O URL 红线仍放行", ok)
+    # 引号变体实测方向锁定（TC 随批纪律）：裸标志+引号值=封堵命中；整引号标志
+    # （PS 实际不可运行形，附录④先例同向）与其后 CFG 尾位=维持放行。
+    ok = _is_approve(_call("terminal", {"command":
+                 "Copy-Item -Destination " + chr(39) + CFG + chr(39) + " " + WS})) \
+        and _call("terminal", {"command":
+                'Copy-Item "-Destination" ' + CFG + " " + WS}) is None
+    _rec("TC-R11-17 F-10-1 引号变体：引号值封堵命中/引号标志不可运行形锁现状", ok)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1233,6 +1294,7 @@ run_r7_fixes()
 run_r8_fixes()
 run_r9_fixes()
 run_r10_fixes()
+run_r11_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

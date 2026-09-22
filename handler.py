@@ -254,12 +254,20 @@ _SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b", re.IGNORECASE)   # F-5：SED/PERL
 # PowerShell 写 cmdlet（安全走查 F-A6）：受保护路径出现在其之后即写目标。
 # 注意分支两组（F-9-1，round10）：仅 Set-Content/Add-Content/Out-File 走
 # 「出现即写」支；Copy-Item/Tee-Object 是复制语义，摘出并入 _COPY_CMDS
-# 末位/命名目标判定（源位=读不拦，与 cp 同语义不分叉）。
+# 末位/命名目标判定（源位=读不拦，与 cp 同语义不分叉；命名目标前置支系
+# round11 fix-011 F-10-1 补建 _PS_NAMED_* 双正则，见 _terminal_position_is_write）。
 _PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORECASE)
 # cp/install -t <dir> 目标标志（F-A7）：-t 后紧跟受保护目录
 _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-directory
     r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 独立短形/词尾；短形簇 -rt/-at
     r"|(?:\s|^)--target-directory(?:\s|=|$)")   # 大写 -T 语义不同（GNU），不扩
+# F-10-1（round11）：PS 复制族命名目标标志（比照 _COPY_T_RE 前置判据同款）。
+# _PS_NAMED_TARGET_RE 尾锚=本 token 紧随标志即其绑定值；_PS_NAMED_ANY_RE=段内
+# 出现过该族标志（末位启发否决依据，`-Destination 非保护 CFG` 源位不再误弹）。
+_PS_NAMED_TARGET_RE = re.compile(
+    r"-(?:Destination|FilePath|Path|Container|LiteralPath)\s*$", re.IGNORECASE)
+_PS_NAMED_ANY_RE = re.compile(
+    r"-(?:Destination|FilePath|Path|Container|LiteralPath)\b", re.IGNORECASE)
 # Q-6-1（round7）：GNU 合法粘连短形 -t<dir> / -t=<dir>（cluster 在前、t 收尾，
 # 余部即目标值，与 getopt 语义一致）；另收引号选项形 cp"-t" 等
 # （shell 剥引号后与裸 -t 同义；字符类用 x27/x22 十六进制形避开 raw 串引号）。
@@ -597,23 +605,12 @@ _MOVE_CMDS = ("mv", "ren")
 # 未知命令带 -o/-O 无法确定语义 → 放行（Q-03 低误拦优先，不为未知工具猜意图）。
 _OUTPUT_FLAG_CMDS_RE = re.compile(r"\b(?:curl|wget|sort)\b", re.IGNORECASE)
 _OUTPUT_FLAG_RE = re.compile(
-    # F-9-3（round10）：短形组补斜杠方言 [-/]o、[-/]O（cmd 版 sort /O <file>）
-    r"(?:--output-document|--output|[-/]o|[-/]O)\s*(?:=\s*)?$", re.IGNORECASE)
+    # F-10-2（round11）：短形组加 token 独立约束（(?:^|(?<=\s)) 前随空白/段首，
+    # [-/]o 大小写双收由 IGNORECASE 承担）——路径/URL token 以 /o、/O、-o 收尾
+    # 不再误命中（r10 放宽回归）；长形与 = 粘连链语义不变。
+    r"(?:--output-document|--output|(?:^|(?<=\s))[-/]o)\s*(?:=\s*)?$", re.IGNORECASE)
 _OUTPUT_FLAG_EQ_RE = re.compile(
     r"(?:--output-document|--output|-o|-O)=(.*)$", re.IGNORECASE)
-
-
-def _prev_command_word(seg: str, start: int):
-    """start 位置之前最近的非选项参数词（跳过 -x 选项），用于 tee 等判定。"""
-    prev = seg[:start].strip()
-    if not prev:
-        return None
-    toks = [t for t in _PATH_TOKEN_RE.finditer(prev)]
-    for t in reversed(toks):
-        w = t.group(0).strip("'\"")
-        if w and not w.startswith("-"):
-            return w
-    return None
 
 
 def _command_word(seg: str):
@@ -695,8 +692,18 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     # 复制类：受保护路径为命令中最后一个路径参数 → 目标写；为源 → 读
     cmd = _command_word(seg)
     if cmd in _COPY_CMDS:
+        # F-10-1（round11）：PS 复制族命名目标支（比照 -t 支同款前置判据）。norm
+        # 受保护面由上游收集门把守。前置绑定命中→判写（封堵 `-Destination <CFG>
+        # 非保护`）；段内含命名标志即否决末位启发（归正反向误弹，CFG 源位必
+        # PASS）；标志后随另一命名标志（`-Container <CFG> -Destination 非保护`，
+        # r10 锁形 B）目标另有其主→本 token 仍按源位放行。
+        named = cmd in ("copy-item", "tee-object") and _PS_NAMED_ANY_RE.search(seg)
+        if named and _PS_NAMED_TARGET_RE.search(before) \
+                and not _PS_NAMED_ANY_RE.search(seg[m.end():]):
+            return True
         path_tokens = [t for t in _PATH_TOKEN_RE.finditer(seg)]
-        if path_tokens and path_tokens[-1].start() == m.start():
+        if path_tokens and path_tokens[-1].start() == m.start() \
+                and (not named or _PS_NAMED_TARGET_RE.search(before)):
             # H-1：末位参数为 home 内**目录**形态（原始 token 以分隔符结尾）→ 写目标。
             # `cp evil.py <home>/plugins/write-guard/` 归一化后不等于任何受保护文件，
             # 但落盘语义=目录内同名覆写（守卫源码经 terminal 单命令可缴械）。

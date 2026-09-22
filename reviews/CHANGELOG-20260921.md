@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-09-22 round11（round10 双路回归修复 F-10-1/F-10-2，fix-011）
+
+**round10 复审**：双路同根互证 CHANGES REQUIRED——安全路 F-10-1（MED）/F-10-2
+（LOW）+ 质量路 Q10-1/Q10-3（同两条）+ NOTES Q10-2/Q10-4；PM pm_verify_011
+十六形+r9 代际对照实测背书（i/j/k/l=PASS 旧 block、m=approve 旧 block、
+o/p/q/r=block 旧 PASS、n/t/u/v/w 锁形零回退）。
+
+**修复项（TC-R11 17 条 + _verify_r11 43/43，PM 门禁实跑全绿）**：
+- F-10-1：复制族新建 PS 命名目标支（_PS_NAMED_TARGET_RE 尾锚前置判据 +
+  _PS_NAMED_ANY_RE 末位启发否决，比照 -t 支同款结构，≤5 行）。前置漏拦封堵
+  （`-Destination/-FilePath <CFG> 非保护` 及 pwsh/sudo 组合形→命中·复制族向
+  approve）；反向误弹归正（`-Destination <非保护> <CFG>` CFG 实为源→PASS，
+  PS 语义红线）；双标志形 `-Container <CFG> -Destination 非保护`（目标另有其主）
+  →PASS 保持 r10 锁形 B；Set-Content 族「出现即写」支不回潮；无命名标志的
+  cp/copy/install/rsync 路径零行为差。
+- F-10-2：_OUTPUT_FLAG_RE 短形组加 token 独立约束
+  `(?:^|(?<=\s))[-/]o`（IGNORECASE 双收，≤3 行，与 F-9-3 同点收敛）。
+  `sort ws/o|ws/O CFG`、`curl http://x/o CFG`、`wget …/f/o CFG` 四形误弹
+  归正 PASS；附录⑥两代同陷形 `sort …/my-dir-o <CFG>` 由同约束**自然归正
+  =PASS（实测）**，按实测方向锁 TC-R11-15；_GLUED_O_RE 粘连链（`-oD:/…`、
+  `-sSL -oCFG`、`/O` 空格形 t/u/v/w）零回退。
+- NOTES（Q10-2/Q10-4 随批）：fix-010.md §1 补记 [DONE F-9-1]；
+  `_prev_command_word` 死函数删除（F-9-4 起 0 调用，PM 实测 grep 0 残留）；
+  CHANGELOG round10 节「末位/命名目标判定」失实句修正（见该节 Q10-1 修正句，
+  Q9-N2 同型第三次）——**命名目标支为 round11 补建，round10 落地时不存在**。
+
 ## 2026-09-22 round10（round9 安全路复审修复 F-9-1~F-9-4，fix-010）
 
 **round9 复审**：质量路 PASS_WITH_NOTES（Q9-N1~N5，文档级）；安全路 CHANGES
@@ -16,9 +42,12 @@ sort /O 方言零覆盖、F-9-4 LOW tee 非末位目标漏拦。
 
 **修复项（TC-R10 15 条 + _verify_r10 46/46，PM 门禁八项独立复跑全绿）**：
 - F-9-1：Copy-Item/Tee-Object 摘出「出现即写」支并入 _COPY_CMDS 复制族同款
-  末位/命名目标判定（_PS_WRITE_RE 回退三词）。实测四向：源位读 PASS、目标写
+  末位目标判定（_PS_WRITE_RE 回退三词）。实测四向：源位读 PASS、目标写
   配置 approve（弹卡，同 cp 红线）、写守卫源码 approve（复制族处置同款）、
-  cp 对照零分叉。
+  cp 对照零分叉。（Q10-1 修正句：原句「末位/命名目标判定」系无中生有失实——
+  round10 落地时命名目标支并不存在，复制族仅有末位启发与 cp/install 专属 -t
+  支；「命名目标支」为 round11 fix-011 补建。此系 Q9-N2 同型失实第三次，
+  实测背书 review-010-qual §2 / review-010-sec F-10-1。）
 - F-9-2：新增 _strip_wrapper_prefix（复用 S-4 剔除链，返回剩余文本），载体
   识别入口单点改匹配对象。实测 sudo bash -c "cp evil 守卫源码" approve（命中）、
   sudo cmd /c copy 配置 approve、nohup/time bash -c 同通道、LANG=C pwsh
