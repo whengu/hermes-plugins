@@ -1,0 +1,62 @@
+--- RL1 gateway block ---
+[ok  ] block   want=block   直写 restart :: 'hermes gateway restart'
+[ok  ] block   want=block   run :: 'hermes gateway run'
+[ok  ] block   want=block   start :: 'hermes gateway start'
+[ok  ] block   want=block   大写 :: 'HERMES GATEWAY RESTART'
+[ok  ] block   want=block   bs+LF 续行 :: 'hermes gateway \\\nrestart'
+[ok  ] block   want=block   bs+CRLF 续行 :: 'hermes gateway \\\r\nrestart'
+[ok  ] block   want=block   多行首行续 :: 'echo x && hermes \\\n gateway restart'
+[ok  ] block   want=block   全局 flag :: 'hermes -p dev gateway restart'
+[ok  ] block   want=block   sudo 交叉 :: 'sudo hermes gateway restart'
+[ok  ] block   want=block   & 交叉 :: 'echo x & hermes gateway restart'
+[ok  ] block   want=block   cmd 载体裸形交叉 :: 'cmd /c hermes gateway restart'
+[ok  ] block   want=block   内嵌引号体 :: 'bash -c "hermes gateway restart"'
+--- RL1 status/stop 不误伤 ---
+[ok  ] PASS    want=PASS    status :: 'hermes gateway status'
+[ok  ] PASS    want=PASS    stop :: 'hermes gateway stop'
+[ok  ] PASS    want=PASS    hermes --help :: 'hermes --help'
+--- RL2 rm -r 平台分层 ---
+[ok  ] PASS    want=PASS    rm -r GUARD :: 'rm -r D:/myagent/.hermes/plugins/write-guard'
+[ok  ] PASS    want=PASS    rm -rf HOME :: 'rm -rf D:/myagent/.hermes'
+[ok  ] PASS    want=PASS    rd /s /q :: 'rd /s /q D:\\myagent\\.hermes\\plugins\\write-guard'
+--- RL3 cp 写配置 approve ---
+[ok  ] approve want=approve cp evil CFG :: 'cp evil D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve 引号源 :: 'cp "D:/myagent/workspace/a.txt" D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve copy /Y :: 'copy /Y evil D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve cmd /c copy 裸形 :: 'cmd /c copy evil D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve Copy-Item 目标 :: 'Copy-Item evil D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve sudo bash -c 弹卡形 :: 'sudo bash -c "cp evil D:/myagent/.hermes/config.yaml"'
+--- RL4 write_file/patch ---
+[ok  ] block   want=block   write_file CFG :: 'D:/myagent/.hermes/config.yaml'
+[ok  ] block   want=block   write_file HD :: 'D:/myagent/.hermes/plugins/write-guard/handler.py'
+[ok  ] block   want=block   write_file 大写 :: 'D:\\MYAGENT\\.HERMES\\config.yaml'
+[ok  ] PASS    want=PASS    write_file ws 负例 :: 'D:/myagent/workspace/a.txt'
+[ok  ] patch HD -> block
+[ok  ] memory approve -> approve
+[ok  ] read_file 纯读 -> PASS
+C守卫 rm /tmp-like: block
+--- 新旁路搜寻：大小写/引号/归一化形 ---
+[ok  ] approve want=approve 大小写 COPY-ITEM 目标配置 :: 'COPY-ITEM evil D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve 大小写 Tee-Object 目标配置 :: 'TEE-OBJECT -FilePath D:/myagent/.hermes/config.yaml'
+[DIFF] PASS    want=approve 整词引号包选项 -Destination :: "Copy-Item evil '-Destination' D:/myagent/.hermes/config.yaml"
+[ok  ] approve want=approve 整词引号包目标 :: 'cp evil "D:/myagent/.hermes/config.yaml"'
+[ok  ] approve want=approve 裸换行链 目标写 :: 'echo hi\nCopy-Item D:/myagent/workspace/a.txt D:/myagent/.hermes/config.yaml'
+[ok  ] block   want=block   &&链 sort /O :: 'echo hi && sort /O D:/myagent/.hermes/config.yaml x'
+[ok  ] block   want=block   内嵌载体×大小写 /O :: 'cmd /C SORT /O D:/myagent/.hermes/config.yaml d.txt'
+[DIFF] PASS    want=block   tee 粘连-a形 :: 'tee -aD:/myagent/.hermes/config.yaml'
+[ok  ] block   want=block   sudo 载体单引号体 :: "sudo bash -c 'tee D:/myagent/.hermes/config.yaml'"
+[ok  ] approve want=approve env×双载体 :: 'env A=1 bash -c "bash -c \'cp evil D:/myagent/.hermes/plugins/write-guard\'"'
+--- glob 目标形（登记边界候选） ---
+[DIFF] approve want=PASS    cp evil home根斜杠glob :: 'cp evil D:/myagent/.hermes/*.yaml'
+[DIFF] approve want=PASS    cp evil GUARD glob :: 'cp evil D:/myagent/.hermes/plugins/write-guard/*.py'
+[ok  ] PASS    want=PASS    cp CFG ws 源位对照 :: 'cp D:/myagent/.hermes/config.yaml D:/myagent/workspace/a.txt'
+--- tilde/家目录形（登记边界候选） ---
+[ok  ] PASS    want=PASS    cp evil ~ 展开前 :: 'cp evil ~/x'
+[DIFF] PASS    want=PASS-or-block cp evil $HOME/config.yaml :: 'cp evil $HOME/config.yaml'
+--- execute_code 内嵌链 ---
+[ok  ] approve want=approve ec os.system Copy-Item 目标配置 :: 'import os\nos.system("Copy-Item D:/myagent/workspace/a.txt D:'
+[ok  ] block   want=block   ec os.system sort /O :: 'import os\nos.system("sort /O D:/myagent/.hermes/config.yaml '
+[ok  ] block   want=block   ec subprocess list tee 非末位 :: 'import subprocess\nsubprocess.run([\'tee\',\'e\',"D:/myagent/.her'
+[ok  ] block   want=block   ec subprocess sudo bash -c :: 'import subprocess\nsubprocess.run(\'sudo bash -c "tee D:/myage'
+[ok  ] block   want=block   ec open w 守卫 :: 'open("D:/myagent/.hermes/plugins/write-guard/handler.py",\'w\''
+[ok  ] block   want=block   ec Path write_text :: 'import pathlib\npathlib.Path("D:/myagent/.hermes/plugins/writ'

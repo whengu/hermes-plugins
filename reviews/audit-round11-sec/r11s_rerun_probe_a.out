@@ -1,0 +1,41 @@
+--- ①源位读 PASS ---
+[ok  ] PASS    want=PASS    Copy-Item 位置源位 :: 'Copy-Item D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml'
+[ok  ] PASS    want=PASS    Copy-Item -Path 命名源 :: 'Copy-Item -Path D:/myagent/.hermes/config.yaml -Destination D:/myagent/workspace/bak.yaml'
+[ok  ] PASS    want=PASS    copy-item 小写 :: 'copy-item D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml'
+[ok  ] PASS    want=PASS    COPY-ITEM 大写 :: 'COPY-ITEM D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml'
+[ok  ] PASS    want=PASS    Copy-Item 反斜杠源 :: 'Copy-Item D:\\myagent\\.hermes\\config.yaml D:/myagent/workspace/bak.yaml'
+[ok  ] PASS    want=PASS    Tee-Object -FilePath 非保护 :: 'Tee-Object -FilePath D:/myagent/workspace/bak.yaml'
+[DIFF] approve want=PASS    Tee-Object 输入位参读 :: 'Tee-Object D:/myagent/.hermes/config.yaml'
+[ok  ] PASS    want=PASS    内嵌载体源位 :: 'pwsh -Command "Copy-Item D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml"'
+[ok  ] PASS    want=PASS    内嵌裸形载体源位 :: 'pwsh -Command Copy-Item D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml'
+[ok  ] PASS    want=PASS    cmd 载体 copy 源位对照 :: 'cmd /c "copy D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml"'
+--- ②目标写配置 approve ---
+[ok  ] approve want=approve Copy-Item BAK CFG :: 'Copy-Item D:/myagent/workspace/bak.yaml D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve -Destination CFG 命名目标 :: 'Copy-Item D:/myagent/workspace/bak.yaml -Destination D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve Tee-Object -FilePath CFG :: 'Tee-Object -FilePath D:/myagent/.hermes/config.yaml'
+[ok  ] approve want=approve 内嵌 Copy-Item 目标配置 :: 'pwsh -Command "Copy-Item D:/myagent/workspace/bak.yaml D:/myagent/.hermes/config.yaml"'
+[ok  ] approve want=approve cp 对照同语义 :: 'cp D:/myagent/workspace/bak.yaml D:/myagent/.hermes/config.yaml'
+--- ③目标写守卫=cp同款 ---
+[ok  ] approve want=approve Copy-Item evil HD :: 'Copy-Item evil D:/myagent/.hermes/plugins/write-guard/handler.py'
+[ok  ] approve want=approve Copy-Item evil GUARD 无尾斜杠 :: 'Copy-Item evil D:/myagent/.hermes/plugins/write-guard'
+[ok  ] approve want=approve Copy-Item evil GUARD/ 尾斜杠 :: 'Copy-Item evil D:/myagent/.hermes/plugins/write-guard/'
+[ok  ] approve want=approve cp evil GUARD 对照 :: 'cp evil D:/myagent/.hermes/plugins/write-guard'
+[ok  ] approve want=approve cp evil GUARD/ 对照 :: 'cp evil D:/myagent/.hermes/plugins/write-guard/'
+--- ④出现即写支不回潮 ---
+[ok  ] block   want=block   Set-Content CFG :: 'Set-Content D:/myagent/.hermes/config.yaml x'
+[ok  ] block   want=block   Add-Content CFG :: 'Add-Content D:/myagent/.hermes/config.yaml x'
+[ok  ] block   want=block   Out-File CFG :: 'Out-File D:/myagent/.hermes/config.yaml'
+[ok  ] block   want=block   内嵌 Set-Content :: 'pwsh -Command "Set-Content D:/myagent/.hermes/config.yaml x"'
+[ok  ] block   want=block   out-file 小写 :: 'out-file D:/myagent/.hermes/config.yaml'
+[ok  ] block   want=block   echo x > CFG 直写 :: 'echo x > D:/myagent/.hermes/config.yaml'
+--- FP 负例 ---
+[ok  ] PASS    want=PASS    Copy-Item ws 非保护 :: 'Copy-Item D:/myagent/workspace/a.txt D:/myagent/workspace/b.txt'
+[ok  ] PASS    want=PASS    Get-Content CFG 读 :: 'Get-Content D:/myagent/.hermes/config.yaml'
+[ok  ] PASS    want=PASS    cat CFG 读 :: 'cat D:/myagent/.hermes/config.yaml'
+[ok  ] PASS    want=PASS    Copy-Item -Container CFG -Dest ws :: 'Copy-Item -Container D:/myagent/.hermes/config.yaml -Destination D:/myagent/workspace/a.txt'
+[ok  ] PASS    want=PASS    Copy-Item 通配符 :: 'Copy-Item D:/myagent/workspace/*.txt D:/myagent/workspace/backup'
+[ok  ] PASS    want=PASS    链式 Copy-Item CFG BAK && echo :: 'Copy-Item D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml && echo done'
+[ok  ] PASS    want=PASS    mv 改名族不拦 :: 'mv D:/myagent/.hermes/config.yaml D:/myagent/workspace/bak.yaml'
+--- execute_code 面 ---
+[ok  ]  ec 内嵌源位 -> PASS
+[ok  ]  ec 内嵌目标配置 -> approve
