@@ -16,7 +16,9 @@
 | round7 | **双路 CR 已收齐**：sa-1 F-7-1(HIGH,PM 复验实锤)/F-7-2 MED/F-7-3,4 登记；sa-0 截断但转写实测（引号 cluster、POSIX 奇偶真值、半混长形）全部并入 fix-008-input.md | a0dab67（round8 提交） | 250 用例（修后） |
 | round8 | 双路终审：质量 PASS_WITH_NOTES（N1~N5 文档级已处置，be14c7f）；安全 CHANGES REQUIRED（纳入范围 S-1~S-5，PM 实测复现）→ 进 round9 | a0dab67/be14c7f | 250→277 |
 | round9 | FIX（sa-0-500024c2，交卷 completed 未截断）+PM 八项门禁全绿→commit cbd6301+deploy。双路终审：质量 PASS_WITH_NOTES（Q9-N1~N5）；安全 CHANGES REQUIRED（F-9-1 复制族源位误拦/F-9-2 wrapper x 载体/F-9-3 sort /O/F-9-4 tee 非末位）→ 进 round10 | cbd6301 | 277 |
-| round10 | FIX（sa-0-8efcf7dd，交卷截断第 6 次但代码/TC/_verify 全落盘零损失；steer 纠偏制品骨架 1 次）+PM 八项门禁全绿（292+46+46+30+30+28+25+红线 on_pre_tool_call 正确入口复测）→commit 2cc28cf+deploy。终审双路在途（deleg_2dd0a165 sec / deleg_ac68bf3a qual），收敛判据不变 | 2cc28cf | 292 |
+| round10 | FIX（sa-0-8efcf7dd，交卷截断第 6 次制品零损失）+PM 门禁→commit 2cc28cf+deploy。双路 CR：F-10-1/Q10-1 命名目标前置双向、F-10-2/Q10-3 /o 外溢（同根互证）+Q10-2/4 NOTES → round11 | 2cc28cf | 292 |
+| round11 | FIX（sa-0-40874a2a 完整交付未截断）+PM 门禁全绿→commit 94998f5+deploy。双路 CR：F-11-3/Q-11-1 绑定词含源参（PM 规格清单根因）/F-11-1 冒号粘连/F-11-2 引号选项词/F-11-4 cluster 尾o（活证背书）→ round12 | 94998f5 | 309 |
+| round12 | FIX（sa-0-4298d00b 完整交付，steer 骨架纠偏 1 次）+PM 门禁全绿（11 verify+pm012 23 形翻转+pm011 16 行零回退+红线四形 on_pre_tool_call+分流语义）→commit 4e254c8+deploy。双路终审在途（deleg_aadc7cca sec / deleg_be807b34 qual）| 4e254c8 | 329 |
 
 ## 门禁基线（PM 验证过的事实，2026-09-22）
 - git HEAD 90de321，工作区干净
