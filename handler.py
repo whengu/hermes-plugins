@@ -246,10 +246,14 @@ _SLASH_DRIVE_RE = re.compile(r"^/[A-Za-z]:/")
 _WIN_ABS_RE = re.compile(r"^[A-Za-z]:[/\\]")
 _DOT_SEGMENT_RE = re.compile(r"(?:^|[/\\])\.\.?(?:[/\\]|$)")
 _SEG_HEAD_RE = re.compile(r"\s*([^\s;&|<>()]+)")
+# S-4（round9 fix-009）：前导 wrapper 词与其后选项/环境赋值（仅剔除链中消费）
+_COMMAND_WRAPPER_RE = re.compile(r"^(?:sudo|time|env|nohup|runas)$", re.IGNORECASE)
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
 _DD_RE = re.compile(r"\bdd\b", re.IGNORECASE)          # F-5（round4）：DD 大写同拦
 _SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b", re.IGNORECASE)   # F-5：SED/PERL 大写同拦
 # PowerShell 写 cmdlet（安全走查 F-A6）：受保护路径出现在其之后即写目标
-_PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORECASE)
+# S-2（round9 fix-009）：扩 Copy-Item|Tee-Object（别名 cp/tee 歧义大，登记不修）
+_PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File|Copy-Item|Tee-Object)\b", re.IGNORECASE)
 # cp/install -t <dir> 目标标志（F-A7）：-t 后紧跟受保护目录
 _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-directory
     r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 独立短形/词尾；短形簇 -rt/-at
@@ -258,6 +262,8 @@ _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-dir
 # 余部即目标值，与 getopt 语义一致）；另收引号选项形 cp"-t" 等
 # （shell 剥引号后与裸 -t 同义；字符类用 x27/x22 十六进制形避开 raw 串引号）。
 _GLUED_T_RE = re.compile(r"^-[a-zA-Z]*t=?(\S+)$")
+# S-1（round9 fix-009）：-o<file>/-O<file> 粘连提取（=形已有 _OUTPUT_FLAG_EQ_RE；--output 长形双 dash 开头不匹配本形）
+_GLUED_O_RE = re.compile(r"^-[a-zA-Z]*[oO](?!=)(\S+)$")
 _COPY_T_QUOTED_RE = re.compile(r"[\x27\x22](?:-t|--target-directory)[\x27\x22]")
 _INPLACE_I_RE = re.compile(r"(?:\s|^)-p?i(?![\w-])")   # -i / -pi / -i.bak / -pi.bak
 _INPLACE_LONG_RE = re.compile(r"--in-place(?![\w-])")    # --in-place / --in-place=.bak
@@ -315,6 +321,11 @@ _EMBED_SHELL_RE = re.compile(
     r"(?:\s+-NoProfile|\s+-NonInteractive|\s+[/-][a-zA-Z]+)*"
     r"\s+(?:-[lc]?c|-Command|-commandwithargs|/c|/k)\b"
     r"\s*(?P<q>['\"])(?P<body>.*?)(?P=q)\s*$", re.IGNORECASE | re.DOTALL)
+# S-5（round9 fix-009）：载体裸形（引号体不成立时的 cmd /c copy… / pwsh -Command …）
+_BARE_CARRIER_RE = re.compile(
+    r"^\s*(?:pwsh|powershell(?:\.exe)?|cmd(?:\.exe)?|bash|sh|zsh|ksh|dash)"
+    r"(?:\s+[/-][A-Za-z]\w*)*\s+(?:-[lc]?c|-Command|-commandwithargs|/c|/k)\b"
+    r"(?P<rest>.*)$", re.IGNORECASE | re.DOTALL)
 # 字符串字面量（subprocess 参数内容提取；list 形态逐项捕获后拼为命令文本）
 _STR_LIT_RE = re.compile(r"(?:[rbfuRBFU]{0,2})(['\"])(.*?)\1", re.DOTALL)
 # 互递归深度上限（terminal 内嵌 python ↔ execute_code 内嵌 shell）
@@ -601,11 +612,14 @@ def _prev_command_word(seg: str, start: int):
 
 
 def _command_word(seg: str):
-    """命令段首个词（命令名）。"""
-    m = _SEG_HEAD_RE.match(seg)
-    if not m:
-        return None
-    return m.group(1).strip("'\"").lower()
+    """命令段首个实词（命令名）。S-4（round9 fix-009）：循环剔除前导 wrapper 词
+    （sudo|time|env|nohup|runas）、环境赋值词（LANG=C）、选项词（/c、-u——首个实词
+    之前的连续位），取下一实词；全被剔除→None（按不可判定放行）。零新解析层。"""
+    toks = [t.strip("'\"") for t in _SEG_HEAD_RE.findall(seg)]
+    while toks and (_COMMAND_WRAPPER_RE.match(toks[0]) or _ENV_ASSIGN_RE.match(toks[0])
+                    or toks[0][:1] in ("/", "-")):
+        toks.pop(0)
+    return toks[0].lower() if toks else None
 
 
 _GUARD_DIR_SEG_RE = re.compile(
@@ -650,7 +664,8 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     # 输出参数（curl/wget/sort 的 -o/-O/--output，含 = 粘连形态）→ 写目标；
     # 未知命令的 -o/-O → 放行（语义不可判定，Q-03）。
     if _OUTPUT_FLAG_CMDS_RE.search(before):
-        if _OUTPUT_FLAG_RE.search(before) or _OUTPUT_FLAG_EQ_RE.match(raw):
+        if _OUTPUT_FLAG_RE.search(before) or _OUTPUT_FLAG_EQ_RE.match(raw) \
+                or _GLUED_O_RE.match(raw):          # S-1：-o<file> 粘连形
             return True
     # 原位编辑 sed -i / perl -pi → 写
     if _SED_PERL_RE.search(before) and (
@@ -802,7 +817,9 @@ def _judge_terminal(command, tool_name, depth=0, base_cwd=None):
         if not pipe_seg:
             continue
         pipe_cwd = cwd                       # 管道两侧独立：cd 不跨管道传播
-        for seg in _split_shell(pipe_seg, ("&&", "||", ";", "\n", "\r")):
+        # S-3（round9 fix-009）：追加单 &（cmd 链式分隔；&&/|| 已按长度降序先行消费，
+        # _split_shell 引号感知——URL 内 & 不误切）
+        for seg in _split_shell(pipe_seg, ("&&", "||", ";", "\n", "\r", "&")):
             seg = seg.strip()
             if not seg:
                 continue
@@ -852,6 +869,14 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
                                   depth=depth + 1, base_cwd=cwd)
             if hit is not None:
                 return hit
+        # S-5（round9 fix-009）：载体裸形剥词递归——cmd /c copy … 无引号体时，
+        # 剥载体词与开关位，剩余文本 depth+1 复用同一 terminal 链判定。
+        bm = _BARE_CARRIER_RE.match(seg)
+        if bm is not None and bm.group("rest").strip() and _EMBED_SHELL_RE.search(seg) is None:
+            hit = _judge_terminal(bm.group("rest"), tool_name,
+                                  depth=depth + 1, base_cwd=cwd)
+            if hit is not None:
+                return hit
     protected = []
     for m in _PATH_TOKEN_RE.finditer(seg):
         raw = m.group(0)
@@ -869,7 +894,7 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             # 前一 token；判定仍由 -t 分支 _COPY_T_QUOTED_RE 门把关，保守收集）。
             norm_raw = raw[1:]
         else:
-            gm = _GLUED_T_RE.match(raw)   # Q-6-1：-t<dir> 粘连短形
+            gm = _GLUED_T_RE.match(raw) or _GLUED_O_RE.match(raw)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
             norm_raw = gm.group(1) if gm else raw
         norm = _normalize_path(norm_raw, base=cwd)
         if norm is None:

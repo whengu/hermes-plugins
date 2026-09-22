@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-09-22 round9（安全路终审修复 S-1~S-5 + N1 补锁向，fix-009）
+
+**基线**：be14c7f/1889ba6，250 用例 ALL PASS；5 条 finding 均 PM 探针
+（reviews/fix009-scratch/pm_verify_009.py）实测复现的纳入范围旁路。
+红线执行：每项 ≤6 行、零新解析层、无重构。
+
+**修复项（TC-R9 27 条 + _verify_r9 46/46）**：
+- **S-1（HIGH）`-o<file>`/`-O<file>` 粘连提取**：新增 `_GLUED_O_RE`
+  （`^-[a-zA-Z]*[oO](?!=)(\S+)$`，仿 _GLUED_T_RE），收集链剥值 + 写矩阵
+  curl/wget/sort 门内识别。`curl -oD:/…/config.yaml`、`sort -o…`、
+  `-sSL -o…` cluster 形全 block；`-O URL`、`-oL`、`--output=`、未知命令
+  -o 红线零回退。
+- **S-2（MED）PS cmdlet 扩集**：`_PS_WRITE_RE` 词表 +Copy-Item|Tee-Object
+  （1 行）。别名 cp/tee 歧义大**登记不修**（cp 别名形经既有 shell 链仍
+  approve，非零兜底）。
+- **S-3（MED）cmd 单 `&` 链式分段**：_judge_terminal 分段集追加 `&`
+  （&&/|| 长度降序先消费；_split_shell 引号感知，URL 内 & 实测不误切）。
+  双向必测全过：`type f 2>&1 > ws`、`cmd 2>&1 | findstr`、`"a=1&b=2"`
+  零误拦；`2>&1> CFG` 裂段残段 `>`+路径 **仍 block（未登记残段边界——
+  重定向分支 before.endswith(">") 独立识别，实测直接成立）**；`> CFG&dir`
+  粘连形亦 block。
+- **S-4（MED）前导 wrapper 词剔除**：_command_word 改为循环剔除
+  sudo|time|env|nohup|runas + 赋值词 `^[A-Za-z_]\w*=` + 首位前连续选项词
+  （/c、-u），取下一实词。runas /user:、sudo、LANG=C 前缀 cp 守卫全
+  approve；env|grep、time ls、sudo cat 读零回退。已知收窄：
+  `sudo -u root cp …`（wrapper 带值选项吞实词→判不可判定放行）登记边界
+  （同形裸 root 词非命令，扩 lookahead 超 6 行红线，boundary 灰区不扩）。
+- **S-5（MED）载体裸形剥词递归**：新增 `_BARE_CARRIER_RE`，载体词
+  （cmd/powershell/pwsh/sh/bash 等）+开关位后无引号体时剥壳 depth+1 递归
+  _judge_terminal（受 _NEST_DEPTH_LIMIT 门）；_EMBED_SHELL_RE 命中时跳过
+  （引号体既有分支零回归）。`cmd /c copy evil CFG`、`cmd /q /c …`、
+  `pwsh -Command Copy-Item …` 全命中；`cmd /c dir`、`Get-Date` 放行。
+
+**质量路 N1 收尾**：补 2 条 TC 锁向（TC-R9-26 半混劈 token tdir= 变体
+锁 PASS、TC-R9-27 F-7-3 保守弹卡锁 approve），CHANGELOG 登记句已改回"有锁"。
+
+**编码约定核查（N3）**：handler 新增行最长 ≤120 合规。
+
+**基线**：test_handler ALL PASS 29+4+277（+27 条 TC-R9）；_verify_r9 46/0、
+pm_verify_009 全部 PASS 行转 approve/正确方向、NEG 行不变；_verify_r8 30/0、
+r7 30/0、r5 28/0、r3 25/0 无回潮。未 commit/未 deploy（PM 门禁后统一做）。
+
 ## 2026-09-22 round8（round7 双路修复 + 终端检查范围决策收缩，deleg_46c5c0d1）
 
 **用户决策（2026-09-22）**：终端内容检查不考虑复杂情况（"不是做 360"），边界
@@ -33,7 +75,8 @@
   3bs+LF approve；半混劈 token tdir= 变体 PASS；F-7-3 保守弹卡 FP 接受；
   跨家 tilde 族维持 F-Q5 登记。锁向说明（终审 N1 口径修正）：前四族有
   TC-R8/_verify_r8 场景；半混劈 token tdir= 变体与 F-7-3 保守弹卡两族
-  行为经终审实测为真、暂无 TC 场景，补锁向用例列入收尾批次。
+  行为经终审实测为真、暂无 TC 场景，补锁向用例列入收尾批次（round9
+  TC-R9-26/27 已补锁，登记闭环）。
 
 **过程记录**：FIX 子代理按"制品先建骨架、每步落盘"纪律执行——交卷时仍撞输出
 截断（第 4 次），但代码/TC/主文档全部落盘可接续，PM 仅补齐 CHANGELOG 登记与

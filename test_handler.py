@@ -922,6 +922,76 @@ def run_r8_fixes():
     _rec("TC-R8-17 workspace 写 → 放行（负例回潮哨）", res is None)
 
 
+def run_r9_fixes():
+    """round9 安全路终审修复回归（S-1~-S-5 + N1 补锁向）。"""
+    SQ, DQ = chr(39), chr(34)
+    GUARD = "D:/myagent/.hermes/plugins/write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    HD = GUARD + "/handler.py"
+    WS = "D:/myagent/workspace/a.txt"
+    TD = "--target-directory"
+    # S-1：-o/-O 粘连提取
+    res = _call("terminal", {"command": "curl -o" + CFG + " http://x"})
+    _rec("TC-R9-01 curl -o<配置> 粘连 → block（S-1）", _is_block(res))
+    res = _call("terminal", {"command": "curl -sSL -o" + HD + " http://x"})
+    _rec("TC-R9-02 curl -sSL -o<守卫源码> → block（S-1 cluster 前缀）", _is_block(res))
+    res = _call("terminal", {"command": "sort -o" + CFG + " d.txt"})
+    _rec("TC-R9-03 sort -o<配置> → block（S-1）", _is_block(res))
+    res = _call("terminal", {"command": "curl -o " + CFG + " http://x"})
+    _rec("TC-R9-04 负例 curl -o 空格形不回退 → block（S-1 负例）", _is_block(res))
+    res = _call("terminal", {"command": "curl -O http://x/a.txt"})
+    _rec("TC-R9-05 负例 curl -O URL 不回退 → 放行（S-1 红线）", res is None)
+    res = _call("terminal", {"command": "curl -oL http://x/a.txt"})
+    _rec("TC-R9-06 负例 curl -oL cluster（值=L 非路径）→ 放行（S-1 负例）", res is None)
+    # S-2：PS cmdlet 扩集
+    res = _call("terminal", {"command": 'pwsh -Command "Copy-Item evil ' + CFG + '"'})
+    _rec("TC-R9-07 Copy-Item 守卫配置 → 命中（S-2）", _is_block(res) or _is_approve(res))
+    res = _call("terminal", {"command": 'pwsh -Command "Tee-Object -FilePath ' + CFG + '"'})
+    _rec("TC-R9-08 Tee-Object -FilePath 配置 → 命中（S-2）", _is_block(res) or _is_approve(res))
+    res = _call("terminal", {"command": 'pwsh -Command "Get-Content ' + CFG + '"'})
+    _rec("TC-R9-09 负例 Get-Content 只读不回潮 → 放行（S-2 负例）", res is None)
+    # S-3：cmd 单 & 链式分段（双向必测）
+    res = _call("terminal", {"command": "echo x & cp evil " + GUARD})
+    _rec("TC-R9-10 单&链 cp 守卫目录 → approve（S-3）", _is_approve(res))
+    res = _call("terminal", {"command": "type f 2>&1 > " + WS})
+    _rec("TC-R9-11 负例 2>&1 workspace 重定向 → 放行（S-3 FP 必测）", res is None)
+    res = _call("terminal", {"command": 'curl "https://x?a=1&b=2"'})
+    _rec("TC-R9-12 负例 引号 URL 内 & 不分段 → 放行（S-3 FP 必测）", res is None)
+    res = _call("terminal", {"command": "echo x 2>&1 > " + CFG})
+    _rec("TC-R9-13 >&1 裂段后 >配置 残段仍 block（S-3 不新漏）", _is_block(res))
+    res = _call("terminal", {"command": "echo x > " + CFG + "&dir"})
+    _rec("TC-R9-14 重定向粘 & 分段配置仍 block（S-3）", _is_block(res))
+    # S-4：前导 wrapper 剔除
+    res = _call("terminal", {"command": "runas /user:admin cp evil " + GUARD})
+    _rec("TC-R9-15 runas /user: 前缀 cp 守卫目录 → approve（S-4）", _is_approve(res))
+    res = _call("terminal", {"command": "sudo cp evil " + GUARD})
+    _rec("TC-R9-16 sudo cp 守卫目录 → approve（S-4）", _is_approve(res))
+    res = _call("terminal", {"command": "LANG=C cp evil " + GUARD})
+    _rec("TC-R9-17 环境赋值前缀 cp → approve（S-4）", _is_approve(res))
+    res = _call("terminal", {"command": "env | grep config"})
+    _rec("TC-R9-18 负例 env 管道 grep → 放行（S-4 不回退）", res is None)
+    res = _call("terminal", {"command": "time ls D:/myagent/workspace"})
+    _rec("TC-R9-19 负例 time ls → 放行（S-4 不回退）", res is None)
+    res = _call("terminal", {"command": "sudo cat " + HD})
+    _rec("TC-R9-20 负例 sudo cat 守卫源码读 → 放行（S-4 负例）", res is None)
+    # S-5：载体裸形剥词递归
+    res = _call("terminal", {"command": "cmd /c copy evil " + CFG})
+    _rec("TC-R9-21 cmd /c copy 裸形配置 → approve（S-5）", _is_approve(res))
+    res = _call("terminal", {"command": "pwsh -Command Copy-Item evil " + CFG})
+    _rec("TC-R9-22 pwsh -Command 裸形 Copy-Item → 命中（S-5+S-2）", _is_block(res) or _is_approve(res))
+    res = _call("terminal", {"command": 'cmd /c "copy evil ' + CFG + '"'})
+    _rec("TC-R9-23 引号体既有分支不回潮 → approve（S-5 负例）", _is_approve(res))
+    res = _call("terminal", {"command": "cmd /c dir D:" + chr(92) + "myagent" + chr(92) + "workspace"})
+    _rec("TC-R9-24 负例 cmd /c dir → 放行（S-5 负例）", res is None)
+    res = _call("terminal", {"command": "pwsh -Command Get-Date"})
+    _rec("TC-R9-25 负例 pwsh -Command Get-Date → 放行（S-5 负例）", res is None)
+    # N1（round8 终审）：补锁向 2 条
+    res = _call("terminal", {"command": "cp -" + DQ + TD + DQ + "=" + GUARD + " x"})
+    _rec("TC-R9-26 半混劈token tdir= 变体 → 锁现状放行（N1 锁向1）", res is None)
+    res = _call("terminal", {"command": "cp " + SQ + "-t" + SQ + " " + CFG + " out/"})
+    _rec("TC-R9-27 F-7-3 保守弹卡整词 -t 空格形 → approve（N1 锁向2）", _is_approve(res))
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1113,6 +1183,7 @@ run_r5_fixes()
 run_r6_fixes()
 run_r7_fixes()
 run_r8_fixes()
+run_r9_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()
