@@ -6,6 +6,52 @@
 
 ---
 
+## 2026-09-22 round10（round9 安全路复审修复 F-9-1~F-9-4，fix-010）
+
+**round9 复审**：质量路 PASS_WITH_NOTES（Q9-N1~N5，文档级）；安全路 CHANGES
+REQUIRED 4 条（全部实测复现，PM pm_verify_010b 独立背书）：F-9-1 MED Copy-Item/
+Tee-Object 源位复制误拦（红线"复制不拦"违背+与 cp 同语义分叉）、F-9-2 MED
+wrapper x 载体组合旁路（sudo bash -c "cp 守卫" PASS）、F-9-3 LOW cmd 原生
+sort /O 方言零覆盖、F-9-4 LOW tee 非末位目标漏拦。
+
+**修复项（TC-R10 15 条 + _verify_r10 46/46，PM 门禁八项独立复跑全绿）**：
+- F-9-1：Copy-Item/Tee-Object 摘出「出现即写」支并入 _COPY_CMDS 复制族同款
+  末位/命名目标判定（_PS_WRITE_RE 回退三词）。实测四向：源位读 PASS、目标写
+  配置 approve（弹卡，同 cp 红线）、写守卫源码 approve（复制族处置同款）、
+  cp 对照零分叉。
+- F-9-2：新增 _strip_wrapper_prefix（复用 S-4 剔除链，返回剩余文本），载体
+  识别入口单点改匹配对象。实测 sudo bash -c "cp evil 守卫源码" approve（命中）、
+  sudo cmd /c copy 配置 approve、nohup/time bash -c 同通道、LANG=C pwsh
+  Copy-Item 经正通道 approve（原巧合命中归正）；负例 env|grep、time ls、
+  nohup python &、sudo cat 读、sudo bash -c "echo hello" 全放行零回退。
+- F-9-3：_GLUED_O_RE 与 _OUTPUT_FLAG_RE 短形组字符类 ^- → ^[-/]。实测
+  sort /O CFG、粘连 /OCFG、SORT /O、cmd /c sort /O 全 block；sort -o 对照
+  不回潮。
+- F-9-4：tee 判据 prev=='tee' 改 _command_word(seg)=='tee'。实测
+  echo x|tee evil CFG、tee -a evil CFG、pwsh 别名 tee evil CFG 全 block；
+  tee CFG out2 对照保持；tee 非保护目标负例放行。
+
+**登记项（质量路 Q9 批，本轮落地）**：
+- 全路径命令词族（/usr/bin/ls cp <home> 类）：round9 S-4 剔除链后与基线两代
+  同向（源位/前导非写语义），登记不修（PM 实测背书）。
+- `bash --login -c "..."` / `bash --norc -c "..."` 长开关族（Q9-N2，PM 实测）：
+  载体正则开关组 `(?:\s+[/-][A-Za-z]\w*)*` 只认单横杠/斜杠+字母，`--login`
+  第二字符非字母不消费；随后 `\s+(?:-[lc]?c|...)` 要求紧跟 -c，遇 `--login`
+  即断，整条不命中。F-9-2 剔除链只剥首个实词**之前**的前导词，--login 位于
+  bash 之后不受益。实测该两形 PASS——既有面，登记不修（扩长开关白名单=
+  复杂度换冷形覆盖，违反范围决策）。
+- round9 "每项 ≤6 行" 总括口径：S-4 为 _command_word 体重写（约 6 行核心+
+  2 条新正则常量），"核心逻辑 ≤6 行"为准，特此注明。
+
+**过程**：FIX 子代理照图施工，代码/TC/_verify_r10 落盘后交卷截断（第 6 次，
+制品纪律下零损失）；CHANGELOG/登记句/fix-010.md §2~§6 由 PM 按降级规则收尾。
+steer 一次（骨架先行纪律纠偏，已生效）。
+
+**基线**：ALL PASS 29+4+292（+15 条 TC-R10）；_verify_r10 46/0、r9 46/0、
+r8 30/0、r7 30/0、r5 28/0、r3 25/0 无回潮；红线经 on_pre_tool_call 正确入口
+复测：gateway restart block（含续行形）、status 不误伤、cp 配置弹卡 approve、
+rm -r 平台分层不变。
+
 ## 2026-09-22 round9（安全路终审修复 S-1~S-5 + N1 补锁向，fix-009）
 
 **基线**：be14c7f/1889ba6，250 用例 ALL PASS；5 条 finding 均 PM 探针

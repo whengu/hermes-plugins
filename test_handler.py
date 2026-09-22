@@ -992,6 +992,54 @@ def run_r9_fixes():
     _rec("TC-R9-27 F-7-3 保守弹卡整词 -t 空格形 → approve（N1 锁向2）", _is_approve(res))
 
 
+def run_r10_fixes():
+    """round10 安全路终审修复回归（F-9-1~F-9-4）。"""
+    SQ, DQ = chr(39), chr(34)
+    GUARD = "D:/myagent/.hermes/plugins/write-guard"
+    CFG = "D:/myagent/.hermes/config.yaml"
+    WS = "D:/myagent/workspace/a.txt"
+    BAK = "D:/myagent/workspace/bak.yaml"
+    # F-9-1：Copy-Item/Tee-Object 摘出「出现即写」支→复制族末位判定（四向锁）
+    res = _call("terminal", {"command": "Copy-Item " + CFG + " " + BAK})
+    _rec("TC-R10-01 F-9-1 四向①源位读 → 放行（红线复制不拦）", res is None)
+    res = _call("terminal", {"command": "Copy-Item " + BAK + " " + CFG})
+    _rec("TC-R10-02 F-9-1 四向②目标写配置 → approve（同cp弹卡）", _is_approve(res))
+    res = _call("terminal", {"command": "Copy-Item evil " + GUARD})
+    _rec("TC-R10-03 F-9-1 四向③目标写守卫 → 命中·复制族向", _is_block(res) or _is_approve(res))
+    ok = _call("terminal", {"command": "cp " + CFG + " " + BAK}) is None \
+        and _is_approve(_call("terminal", {"command": "cp evil " + GUARD}))
+    _rec("TC-R10-04 F-9-1 四向④cp 对照不变（源PASS/目标approve）", ok)
+    res = _call("terminal", {"command": "Set-Content " + CFG + " x"})
+    _rec("TC-R10-05 F-9-1 负例 Set-Content 出现即写不回潮 → block", _is_block(res))
+    # F-9-2：wrapper × 载体通道
+    res = _call("terminal", {"command": 'sudo bash -c "cp evil ' + GUARD + '"'})
+    _rec("TC-R10-06 F-9-2 sudo bash -c 载体 → approve（正通道）", _is_approve(res))
+    res = _call("terminal", {"command": 'LANG=C pwsh -Command "Copy-Item evil ' + CFG + '"'})
+    _rec("TC-R10-07 F-9-2 赋值前缀×载体×F-9-1 归正 → approve", _is_approve(res))
+    ok = _call("terminal", {"command": "env | grep config"}) is None \
+        and _call("terminal", {"command": "time ls D:/myagent/workspace"}) is None \
+        and _call("terminal", {"command": "nohup python x &"}) is None
+    _rec("TC-R10-08 F-9-2 负例 env|grep、time ls、nohup& 不回退", ok)
+    res = _call("terminal", {"command": 'sudo bash -c "echo x > ' + CFG + '"'})
+    _rec("TC-R10-09 F-9-2 负例 sudo bash -c 重定向写配置仍 block", _is_block(res))
+    # F-9-3：cmd 原生 sort /O 方言
+    res = _call("terminal", {"command": "sort /O " + CFG + " d.txt"})
+    _rec("TC-R10-10 F-9-3 sort /O 空格形 → block", _is_block(res))
+    res = _call("terminal", {"command": "sort /O" + CFG + " d.txt"})
+    _rec("TC-R10-11 F-9-3 sort /O 粘连形 → block", _is_block(res))
+    ok = _call("terminal", {"command": "curl -O http://x/a.txt"}) is None \
+        and _call("terminal", {"command": "sort -o " + CFG + " d.txt"}) is not None \
+        and _call("terminal", {"command": "findstr /O x f"}) is None
+    _rec("TC-R10-12 F-9-3 负例 -O URL放行/sort -o不回潮/门外findstr放行", ok)
+    # F-9-4：tee 段命令词判定（全部位参皆目标）
+    res = _call("terminal", {"command": "echo x | tee evil.txt " + CFG})
+    _rec("TC-R10-13 F-9-4 tee 非末位目标 → block", _is_block(res))
+    res = _call("terminal", {"command": "tee -a evil.txt " + CFG})
+    _rec("TC-R10-14 F-9-4 tee -a 多目标 → block", _is_block(res))
+    res = _call("terminal", {"command": "cat x | tee " + WS})
+    _rec("TC-R10-15 F-9-4 负例 tee 非保护目标 → 放行", res is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1184,6 +1232,7 @@ run_r6_fixes()
 run_r7_fixes()
 run_r8_fixes()
 run_r9_fixes()
+run_r10_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

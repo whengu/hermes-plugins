@@ -251,9 +251,11 @@ _COMMAND_WRAPPER_RE = re.compile(r"^(?:sudo|time|env|nohup|runas)$", re.IGNORECA
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
 _DD_RE = re.compile(r"\bdd\b", re.IGNORECASE)          # F-5（round4）：DD 大写同拦
 _SED_PERL_RE = re.compile(r"\b(?:sed|perl)\b", re.IGNORECASE)   # F-5：SED/PERL 大写同拦
-# PowerShell 写 cmdlet（安全走查 F-A6）：受保护路径出现在其之后即写目标
-# S-2（round9 fix-009）：扩 Copy-Item|Tee-Object（别名 cp/tee 歧义大，登记不修）
-_PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File|Copy-Item|Tee-Object)\b", re.IGNORECASE)
+# PowerShell 写 cmdlet（安全走查 F-A6）：受保护路径出现在其之后即写目标。
+# 注意分支两组（F-9-1，round10）：仅 Set-Content/Add-Content/Out-File 走
+# 「出现即写」支；Copy-Item/Tee-Object 是复制语义，摘出并入 _COPY_CMDS
+# 末位/命名目标判定（源位=读不拦，与 cp 同语义不分叉）。
+_PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORECASE)
 # cp/install -t <dir> 目标标志（F-A7）：-t 后紧跟受保护目录
 _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-directory
     r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 独立短形/词尾；短形簇 -rt/-at
@@ -263,7 +265,8 @@ _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-dir
 # （shell 剥引号后与裸 -t 同义；字符类用 x27/x22 十六进制形避开 raw 串引号）。
 _GLUED_T_RE = re.compile(r"^-[a-zA-Z]*t=?(\S+)$")
 # S-1（round9 fix-009）：-o<file>/-O<file> 粘连提取（=形已有 _OUTPUT_FLAG_EQ_RE；--output 长形双 dash 开头不匹配本形）
-_GLUED_O_RE = re.compile(r"^-[a-zA-Z]*[oO](?!=)(\S+)$")
+# F-9-3（round10）：字符类 ^- → ^[-/]，收 cmd 原生 sort /O<file> 粘连方言
+_GLUED_O_RE = re.compile(r"^[-/][a-zA-Z]*[oO](?!=)(\S+)$")
 _COPY_T_QUOTED_RE = re.compile(r"[\x27\x22](?:-t|--target-directory)[\x27\x22]")
 _INPLACE_I_RE = re.compile(r"(?:\s|^)-p?i(?![\w-])")   # -i / -pi / -i.bak / -pi.bak
 _INPLACE_LONG_RE = re.compile(r"--in-place(?![\w-])")    # --in-place / --in-place=.bak
@@ -585,7 +588,8 @@ _CD_PREFIX_RE = re.compile(r"^(?:cd|pushd)\s+(?:/d\s+)?([^|]+)$", re.IGNORECASE)
 # → 降为声明边界（CHANGELOG）。注意：robocopy 写配置当前零兜底（不在复制族、
 # 末位是文件名非目录，其余矩阵分支均不命中，round5 sa-1 F-Q1 实测），与其说
 # "有兜底"不如如实登记为零覆盖边界。
-_COPY_CMDS = ("cp", "copy", "install", "rsync")
+_COPY_CMDS = ("cp", "copy", "install", "rsync",
+              "copy-item", "tee-object")   # F-9-1（round10）：PS 复制族 cmdlet 并入同款判定
 _MOVE_CMDS = ("mv", "ren")
 
 # 输出参数形态（FR-02③「等」字范围）：已知带输出文件参数的下载/输出命令
@@ -593,7 +597,8 @@ _MOVE_CMDS = ("mv", "ren")
 # 未知命令带 -o/-O 无法确定语义 → 放行（Q-03 低误拦优先，不为未知工具猜意图）。
 _OUTPUT_FLAG_CMDS_RE = re.compile(r"\b(?:curl|wget|sort)\b", re.IGNORECASE)
 _OUTPUT_FLAG_RE = re.compile(
-    r"(?:--output-document|--output|-o|-O)\s*(?:=\s*)?$", re.IGNORECASE)
+    # F-9-3（round10）：短形组补斜杠方言 [-/]o、[-/]O（cmd 版 sort /O <file>）
+    r"(?:--output-document|--output|[-/]o|[-/]O)\s*(?:=\s*)?$", re.IGNORECASE)
 _OUTPUT_FLAG_EQ_RE = re.compile(
     r"(?:--output-document|--output|-o|-O)=(.*)$", re.IGNORECASE)
 
@@ -620,6 +625,22 @@ def _command_word(seg: str):
                     or toks[0][:1] in ("/", "-")):
         toks.pop(0)
     return toks[0].lower() if toks else None
+
+
+def _strip_wrapper_prefix(seg: str) -> str:
+    """F-9-2（round10）：复用 _command_word 剔除链（wrapper 词/环境赋值/前导选项），
+    但返回剔除后的**剩余文本**（无剔除则原样）——供载体正则先于原文尝试匹配，
+    打通 wrapper×载体组合通道（sudo bash -c "…" / LANG=C pwsh -Command …）。"""
+    toks = list(_SEG_HEAD_RE.finditer(seg))
+    i = 0
+    while i < len(toks):
+        w = toks[i].group(1).strip("'\"")
+        if (_COMMAND_WRAPPER_RE.match(w) or _ENV_ASSIGN_RE.match(w)
+                or w[:1] in ("/", "-")):
+            i += 1
+        else:
+            break
+    return seg[toks[i - 1].end():] if i else seg
 
 
 _GUARD_DIR_SEG_RE = re.compile(
@@ -657,9 +678,9 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
     # dd of=路径 → 写
     if raw.lower().startswith("of=") and _DD_RE.search(before):
         return True
-    # tee 目标 → 写
-    prev = _prev_command_word(seg, start)
-    if prev is not None and prev.lower() == "tee":
+    # tee 目标 → 写（全部位参皆目标，POSIX tee 语义；F-9-4 round10：判据由
+    # "前一词==tee"改为"段命令词==tee"，非末位多目标形不再漏拦）
+    if _command_word(seg) == "tee":
         return True
     # 输出参数（curl/wget/sort 的 -o/-O/--output，含 = 粘连形态）→ 写目标；
     # 未知命令的 -o/-O → 放行（语义不可判定，Q-03）。
@@ -862,8 +883,11 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
         return hit
     # M-1：内嵌 shell 载体段（bash -c "…" / pwsh -Command "…" / cmd /c "…"）——
     # 引号体是完整 shell 命令，递归按 terminal 链判定（深度上限防互爆）。
+    # F-9-2（round10）：匹配对象改用 wrapper 剔除链输出的剩余文本（单点改在
+    # 载体识别入口；无 wrapper 前导时 _strip_wrapper_prefix 原样返回，零行为差）。
     if depth < _NEST_DEPTH_LIMIT:
-        em = _EMBED_SHELL_RE.search(seg)
+        carrier_seg = _strip_wrapper_prefix(seg)
+        em = _EMBED_SHELL_RE.search(carrier_seg)
         if em is not None:
             hit = _judge_terminal(em.group("body"), tool_name,
                                   depth=depth + 1, base_cwd=cwd)
@@ -871,8 +895,8 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
                 return hit
         # S-5（round9 fix-009）：载体裸形剥词递归——cmd /c copy … 无引号体时，
         # 剥载体词与开关位，剩余文本 depth+1 复用同一 terminal 链判定。
-        bm = _BARE_CARRIER_RE.match(seg)
-        if bm is not None and bm.group("rest").strip() and _EMBED_SHELL_RE.search(seg) is None:
+        bm = _BARE_CARRIER_RE.match(carrier_seg)
+        if bm is not None and bm.group("rest").strip() and _EMBED_SHELL_RE.search(carrier_seg) is None:
             hit = _judge_terminal(bm.group("rest"), tool_name,
                                   depth=depth + 1, base_cwd=cwd)
             if hit is not None:
