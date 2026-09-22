@@ -14,7 +14,9 @@
 | round5 | sa-1 轻量CR；sa-0 截断(转写捞实锤) | 8fa3fe1 | 219 用例 |
 | round6 | 双路 CR（NL 换行 HIGH + Q-6-1） | 90de321 | 233 用例 |
 | round7 | **双路 CR 已收齐**：sa-1 F-7-1(HIGH,PM 复验实锤)/F-7-2 MED/F-7-3,4 登记；sa-0 截断但转写实测（引号 cluster、POSIX 奇偶真值、半混长形）全部并入 fix-008-input.md | a0dab67（round8 提交） | 250 用例（修后） |
-| round8 | FIX 已由 subagent 落地+PM 门禁全复跑（制品纪律首跑成功：子代理截断但零损失）。**当前部署代际=round7 产物（git 90de321，handler sha256 前缀 c1b3ddb0，主部署+双镜像一致（PM 实测 2026-09-22 19:1x）），round8（a0dab67）尚未部署属预期**——终审双路（deleg_5a2a90a4 sec / deleg_a6c1e60d qual）按新收敛判据评审 a0dab67，PASS 后才 deploy | 待终审 | 250 |
+| round8 | 双路终审：质量 PASS_WITH_NOTES（N1~N5 文档级已处置，be14c7f）；安全 CHANGES REQUIRED（纳入范围 S-1~S-5，PM 实测复现）→ 进 round9 | a0dab67/be14c7f | 250→277 |
+| round9 | FIX（sa-0-500024c2，交卷 completed 未截断）+PM 八项门禁全绿→commit cbd6301+deploy。双路终审：质量 PASS_WITH_NOTES（Q9-N1~N5）；安全 CHANGES REQUIRED（F-9-1 复制族源位误拦/F-9-2 wrapper x 载体/F-9-3 sort /O/F-9-4 tee 非末位）→ 进 round10 | cbd6301 | 277 |
+| round10 | FIX（sa-0-8efcf7dd，交卷截断第 6 次但代码/TC/_verify 全落盘零损失；steer 纠偏制品骨架 1 次）+PM 八项门禁全绿（292+46+46+30+30+28+25+红线 on_pre_tool_call 正确入口复测）→commit 2cc28cf+deploy。终审双路在途（deleg_2dd0a165 sec / deleg_ac68bf3a qual），收敛判据不变 | 2cc28cf | 292 |
 
 ## 门禁基线（PM 验证过的事实，2026-09-22）
 - git HEAD 90de321，工作区干净
