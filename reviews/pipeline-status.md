@@ -13,8 +13,8 @@
 | round4 | 双路 CR | 4d08ddd | 208 用例 |
 | round5 | sa-1 轻量CR；sa-0 截断(转写捞实锤) | 8fa3fe1 | 219 用例 |
 | round6 | 双路 CR（NL 换行 HIGH + Q-6-1） | 90de321 | 233 用例 |
-| round7 | **双路 CR 已收齐**：sa-1 F-7-1(HIGH,PM 复验实锤)/F-7-2 MED/F-7-3,4 登记；sa-0 截断但转写实测（引号 cluster、POSIX 奇偶真值、半混长形）全部并入 fix-008-input.md | 修复在途 deleg_d200c9b1 | 233 用例（修前基线） |
-| round8 | FIX subagent 执行中（按 reviews/fix-008-input.md：F-7-1 引号感知续行归一+F1b 奇偶族 / F-7-2/2b/2c token 引号剥离 / F3 CHANGELOG 口径+登记）。PM 门禁=实跑 test/_verify_r7 不回潮/_verify_r8 + fix-008.md 复核 → 通过后 commit+deploy → 派 round8 双路复审 | — | — |
+| round7 | **双路 CR 已收齐**：sa-1 F-7-1(HIGH,PM 复验实锤)/F-7-2 MED/F-7-3,4 登记；sa-0 截断但转写实测（引号 cluster、POSIX 奇偶真值、半混长形）全部并入 fix-008-input.md | a0dab67（round8 提交） | 250 用例（修后） |
+| round8 | FIX 已由 subagent 落地+PM 门禁全复跑（制品纪律首跑成功：子代理截断但零损失）。**当前部署代际=round7 产物（git 90de321，handler sha256 前缀 c1b3ddb0，主部署+双镜像一致（PM 实测 2026-09-22 19:1x）），round8（a0dab67）尚未部署属预期**——终审双路（deleg_5a2a90a4 sec / deleg_a6c1e60d qual）按新收敛判据评审 a0dab67，PASS 后才 deploy | 待终审 | 250 |
 
 ## 门禁基线（PM 验证过的事实，2026-09-22）
 - git HEAD 90de321，工作区干净

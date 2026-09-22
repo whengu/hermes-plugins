@@ -16,8 +16,9 @@
 全部登记在案**。
 
 **修复项（TC-R8 17 条 + _verify_r8 30/30，PM 门禁全复跑）**：
-- **F-7-1（HIGH）续行归一语义重写**：两处盲 replace（terminal 入口 + gateway
-  守卫，第三处同源）→ _join_line_continuations 引号感知状态机：引号外 反斜杠+
+- **F-7-1（HIGH）续行归一语义重写**：原盲 replace 共 3 处替换操作 / 2 个调用点
+  （terminal 入口一行链式替换 LF+CRLF 两形 + gateway 守卫 D 段 1 处）
+  → _join_line_continuations
   LF/CR+LF 删字符直接相接；单引号内字面不处理；双引号内不处理（登记）；反斜杠
   逐对消耗自然满足奇偶语义。实测真续行 LF/CRLF approve、2bs 分段旁路封、
   gateway 两形红线 block 保持。CHANGELOG round7 失实口径已括注修正。
@@ -27,14 +28,19 @@
 - **验证脚本归因两处（PM 复核）**：半混 -"tdir" 形基线本为 approve（整词选项
   方向，纳入范围），脚本理论值误标 PASS——修正预期非改代码；`rm -r` 拦截属平台
   approvals 层职责不属插件四守卫，分层负例替代。
-- **接受边界登记（排除范围逐条，TC 锁现状方向防漂移）**：劈 token 穿插族
+- **接受边界登记（排除范围逐条，行为方向防漂移）**：劈 token 穿插族
   （cp -'t'DIR / -"t"DIR）PASS；双引号内 bs+LF、反引号混排、4bs+LF PASS；
   3bs+LF approve；半混劈 token tdir= 变体 PASS；F-7-3 保守弹卡 FP 接受；
-  跨家 tilde 族维持 F-Q5 登记。
+  跨家 tilde 族维持 F-Q5 登记。锁向说明（终审 N1 口径修正）：前四族有
+  TC-R8/_verify_r8 场景；半混劈 token tdir= 变体与 F-7-3 保守弹卡两族
+  行为经终审实测为真、暂无 TC 场景，补锁向用例列入收尾批次。
 
 **过程记录**：FIX 子代理按"制品先建骨架、每步落盘"纪律执行——交卷时仍撞输出
 截断（第 4 次），但代码/TC/主文档全部落盘可接续，PM 仅补齐 CHANGELOG 登记与
 验收记录（本轮起截断不再造成工作丢失，验证了制品交接的防断价值）。
+
+**编码约定（终审 N3 落地）**：handler.py 单行长度阈值=120（实测最长 113，合规）；
+test_handler.py 不强制（L715=125 为 round8 前既有长行，属测试数据段）。
 
 **基线**：ALL PASS 29+4+250（+17 条 TC-R8）；_verify_r7 30/0、r5 28/0、r3 25/0
 无回潮。

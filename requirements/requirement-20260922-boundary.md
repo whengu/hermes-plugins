@@ -27,7 +27,8 @@ shell 语法冷知识才能构造出来的形态，不在防御义务范围内�
 2. **反斜杠奇偶算术族**：`\\`+LF、3 反斜杠+LF、引号内 `\`+LF、双引号内反斜杠
    仅对 `$ " \` 生效的转义表——POSIX 冷知识，人类手写命令不会这么写；
 3. 变量间接展开（`a=cp; b=-t; $a $b DIR`）、eval 套壳（N-7）、heredoc 内嵌脚本
-   深递归、tar/ln/robocopy/xcopy 专属语义（均已有登记）；
+   深递归、tar/ln/robocopy/xcopy 专属语义（既有登记在案；heredoc 内嵌脚本方向由
+   round6 NL 分段修复实际覆盖，无独立 CHANGELOG 条目，此处为显式登记点）；
 4. 多解释器嵌套（bash 套 powershell 套 cmd）、编码混淆（base64 管道回连）。
 
 ## 判级流程（后续每轮复审适用）
