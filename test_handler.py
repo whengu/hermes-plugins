@@ -1445,6 +1445,56 @@ def run_r17_fixes():
          and _call("terminal", {"command": "mv " + HOME_ABS + "/x.dat " + HOME_ABS + "/config.yaml"}) is None)
 
 
+def run_r18_fixes():
+    """round18 修复回归（fix-018 改动1：F-17-S1 紧邻前 token 门控收紧——
+    -t 他处形不绑定本 token，源位读红线复位；改动1b/1c 同谓词对称补全，
+    绝对形零漂移）。靶心 G1/G3/G6/G7 转 PASS、G2/G4/G8/T6/T8/K1~K8 零回退
+    ——断言值=施工后实跑核对（同构 pm018 表，24/24）。"""
+    B = chr(92)
+    HOME_ABS = "D:" + B + "myagent" + B + ".hermes"
+    def hit(c):
+        r = _call("terminal", {"command": c})
+        return _is_approve(r) or _is_block(r)
+    # 靶心 G1：-t 绑 HOME 外目标 → tilde 文件源位读复位 PASS
+    _rec("TC-R18-01 G1 cp -t D:/other/out ~/.hermes/x.dat evil 源读 → PASS",
+         _call("terminal", {"command": "cp -t D:/other/out ~/.hermes/x.dat evil.bin"}) is None)
+    # 靶心 G3：-t 绑 HOME 外 → 清单文件形源读亦复位（1b 别名形尾锚补全，
+    # 绝对形维持既有面零漂移）
+    _rec("TC-R18-02 G3 cp -t D:/other/out ~/.hermes/config.yaml evil → PASS",
+         _call("terminal", {"command": "cp -t D:/other/out ~/.hermes/config.yaml evil.bin"}) is None)
+    # 靶心 G6：-t 绑 HOME 外 → HOME 内目录中段源读复位 PASS
+    _rec("TC-R18-03 G6 cp -t D:/other/out a.md ~/.hermes/logs b.md → PASS",
+         _call("terminal", {"command": "cp -t D:/other/out a.md ~/.hermes/logs b.md"}) is None)
+    # 靶心 G7：install -t 绑 HOME 外 → 末位 tilde 源读复位（1c bind 否决）
+    _rec("TC-R18-04 G7 install -t D:/other/out ~/.hermes/x 源读 → PASS",
+         _call("terminal", {"command": "install -t D:/other/out ~/.hermes/x"}) is None)
+    # 锁 G2/G4：-t 目标位本身 tilde（HOME 内/目录位）→ hit 不回退
+    _rec("TC-R18-05 G2/G4 -t 目标在 HOME 内 hit 不回退",
+         hit("cp -t ~/.hermes/out/ src1 src2")
+         and hit("cp -t ~/.hermes ~/.hermes/config.yaml evil"))
+    # 锁 G8：-t 目标 HOME 内 + 源也 tilde → 歧义取拦维持（本修不碰）
+    _rec("TC-R18-06 G8 cp -t ~/.hermes/out ~/.hermes/x.dat evil 歧义取拦维持 hit",
+         hit("cp -t ~/.hermes/out ~/.hermes/x.dat evil"))
+    # 锁 T6/T8：粘连形 + 紧邻分列目标形不回退（1f 收紧仅砍非紧邻）
+    _rec("TC-R18-07 T6 粘连 \\\"-t~/.hermes/tdir\\\" + T8 紧邻分列目标 hit 不回退",
+         hit('cp "-t~/.hermes/tdir" x') and hit("cp -t ~/.hermes/x.dat evil"))
+    # 锁 cluster/长形紧邻形：-r -t / -rt / --target-directory 后随目标仍 hit
+    _rec("TC-R18-08 cluster -r -t/-rt 与长形 --target-directory 紧邻目标 hit",
+         hit("cp -r -t ~/.hermes/dir src") and hit("cp -rt ~/.hermes/dir src")
+         and hit("cp --target-directory ~/.hermes/dir src"))
+    # 锁 K1~K5/K8 抽样 + rsync 分叉 + 绝对形零漂移（TC-R17-10 同构）
+    _rec("TC-R18-09 读锁/rsync 分叉/绝对 -t 零漂移/K8 绝对改名 不回退",
+         _call("terminal", {"command": "cat ~/.hermes/x.dat"}) is None
+         and _call("terminal", {"command": "rsync -t ~/.hermes/config.yaml dest/"}) is None
+         and _call("terminal", {"command": "cp -t " + HOME_ABS + "/x.dat evil"}) is None
+         and hit("mv D:/other/a.txt ~/.hermes/config.yaml"))
+    # 锁 T1~T5/K6 末位写族零扰动（无 -t 面，1c 不触发）
+    _rec("TC-R18-10 T1~T5/K6 末位写族 hit 零扰动",
+         hit("cp evil ~/.hermes/x.dat") and hit("cp evil ~/.hermes/skills/")
+         and hit("cp evil ~/.hermes/logs") and hit("cp evil ~/.hermes")
+         and hit("cp evil ~/.hermes/y") and hit("cp evil ~/.hermes/config.yaml"))
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1645,6 +1695,7 @@ run_r14_fixes()
 run_r15_fixes()
 run_r16_fixes()
 run_r17_fixes()
+run_r18_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

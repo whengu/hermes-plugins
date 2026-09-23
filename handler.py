@@ -270,6 +270,9 @@ _PS_WRITE_RE = re.compile(r"\b(?:Set-Content|Add-Content|Out-File)\b", re.IGNORE
 _COPY_T_RE = re.compile(          # C3（round5 sa-0）：补长形 --target-directory
     r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])(?:\s|$)"   # 独立短形/词尾；短形簇 -rt/-at
     r"|(?:\s|^)--target-directory(?:\s|=|$)")   # 大写 -T 语义不同（GNU），不扩
+# R18（F-17-S1）：_COPY_T_RE 的**紧邻前 token 尾锚**形——仅供「-t 绑定本 token」
+# 判定（1f 分列支 + 矩阵 -t 支）；「段内出现过 -t」的宽 search 保留给引号选项形。
+_COPY_T_TAIL_RE = re.compile(r"(?:\s|^)-[a-zA-Z]*t(?![a-zA-Z])$|(?:\s|^)--target-directory$")
 # F-10-1（round11）：PS 复制族命名目标标志（比照 _COPY_T_RE 前置判据同款）。
 # _PS_NAMED_ANY_RE=段内出现过该族标志（末位启发否决依据，`-Destination 非保护 CFG`
 # 源位不再误弹）；五词表不动（规格 A4：named 前置条件保持全局在场检测）。
@@ -799,7 +802,13 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
                 and not bind.search(seg[m.end():]):
             return True
         path_tokens = [t for t in _PATH_TOKEN_RE.finditer(seg)]
+        # R18（F-17-S1 靶心 G7 封堵链末点）：cp/install 的 -t 已绑定**另一**目标
+        # token（before 含 -t 且非紧邻本 token 尾部）→ 本 token 即便末位也是位置
+        # 参=源位读，否决末位启发（与 PS 句2 bind 否决 r11 F-10-1 同构先例）。
+        _t_other = (cmd in ("cp", "install")
+                    and _COPY_T_RE.search(before) and not _COPY_T_TAIL_RE.search(before))
         if path_tokens and path_tokens[-1].start() == m.start() \
+                and not _t_other \
                 and (not named or (own
                         and not bind.search(seg[:own.start()])
                         and not bind.search(seg[m.end():]))):
@@ -824,7 +833,11 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
         if (cmd in ("cp", "install") and norm is not None
                 and (_tv == home or _tv.startswith(home + _SEP)
                      or _is_guard_dir_target(norm))
-                and (_COPY_T_RE.search(before)
+                # R18（F-17-S1 同根第二点，review-017 根因链点名「矩阵 F-A7 支
+                # 同款非锚定 search」）：别名形 -t 绑定=紧邻前 token 尾锚；绝对形
+                # （_tv==norm）维持 f8465c3 既有 search 面零漂移（同 1f/双闸形）。
+                and ((_COPY_T_TAIL_RE.search(before) if _tv != norm
+                      else _COPY_T_RE.search(before))
                      # F-13-S1-A2（round14）：--target-directory= 前缀支匹配输入接
                      # _pair_unquote（仅判定视图，`cp "--target-directory=<CFG>"`
                      # 与裸形同义；norm 链不经过——F-7-2 禁令）
@@ -1092,10 +1105,11 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
                 # 末位约束拒收、矩阵 -t 支（判写语义所在）不可达。仅**别名形**
                 # （norm≠视图；绝对形维持既有双代 PASS 零漂移——r16 mv 支同构门控）
                 # 且本 token 正处 cp/install 的 -t 目标位（粘连 -t<dir>/引号形
-                # = _GLUED_T_RE 提取值；分列形 = 前随 _COPY_T_RE）时入收集面；
-                # 判写仍由矩阵 -t 支既有语义决定（rsync -t 语义分叉不入门）。
+                # = _GLUED_T_RE 提取值；分列形=**紧邻前一 token** 为 -t 标志即
+                # R18 F-17-S1 收紧，段内他处 -t 不绑定本 token——源位读红线）时
+                # 入收集面；判写仍由矩阵 -t 支既有语义决定（rsync -t 分叉不入门）。
                 _c4 = bool(_GLUED_T_RE.match(_pair_unquote(raw))
-                           or _COPY_T_RE.search(seg[:m.start()]))
+                           or _COPY_T_TAIL_RE.search(seg[:m.start()].rstrip()))
             if _c4:
                 is_dir_target = True
         _prot_hit = _is_protected_config(norm)

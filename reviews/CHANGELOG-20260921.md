@@ -10,6 +10,45 @@
 
 ---
 
+## 2026-09-23 round18（round17 终审 F-17-S1：-t 紧邻前 token 门控收紧——源位读红线复位，fix-018）
+
+**立项**：round17 终审 F-17-S1（MED）——1f 补点分列支 `_COPY_T_RE.search(seg[:m.start()])`
+为段内**任意位置**搜索，非「-t 绑定本 token」：`cp -t D:/other/out ~/.hermes/x.dat evil`
+的 tilde 源位被收入收集面转 approve，破「复制源位=读不拦」红线（绝对形双代恒
+PASS=同语义异值实锤，PM probe_018_diff 双代差分复验同证）。
+
+**名实不实现象第八次登记**：1f 注释承诺「分列形=前随 _COPY_T_RE」——「前随」与
+`search` 段内任意是两回事。教训句：**紧邻语义必须紧邻实现——search 与 match 之差
+即红线之差**。原文已随批改实（注释明写「紧邻前一 token」）。
+
+**改动1（锚定收紧，零新逻辑）**：
+- 1a 规格字面：新增尾锚常量 `_COPY_T_TAIL_RE`，1f 分列支 search(before.rstrip())
+  收紧为紧邻尾锚；粘连 `_GLUED_T_RE` 支不动。
+- 1b 同根第二点（矩阵 -t 支，review-017 根因链点名「F-A7 支同款非锚定 search」）：
+  别名形（`_tv != norm`）首条件走 TAIL 锚，绝对形维持既有 search——**绝对面
+  f8465c3/r16 代零漂移对拍 5 形全同值**。
+- 1c 同根第三点（末位启发，G7 `install -t D:/other/out ~/.hermes/x`）：cp/install
+  段内 -t 在场但非紧邻本 token → 本 token=位置参源位，否决末位写启发（r11 F-10-1
+  PS 句2 bind 否决同构先例在册）。规格「≤4 行」按 1f 单点定演实测 22/24 走不通，
+  1b/1c 系同一谓词的补全非扩逻辑，偏差已在 fix-018.md §A 报告。
+
+**NOTES 随批（round17 终审 4 条）**：N-17-1 fix-017 §0「已通」句就地改实（见上）；
+N-17-2 引号选项词族 `-t "<dir>"` 宽拦面（`cp '-t' ~/.hermes/tdir x`、
+`"--target-directory"=~`、`"-rt" ~` 三形双代对称旁路）→ **接受边界登记不修**
+（boundary 排除口径内：引号劈选项词族；本修 1a-1c 不触碰其面，实测行为零变化）；
+N-17-3 rule_key 以 norm 为键、tilde/绝对别名弹卡键不互认（round16 既有继承面）→
+登记在册不修；N-17-4 无扩展名配置名（`~/.hermes/config`）走落位句——文案真实
+自解释，「带扩展名点号」双保险系在册取舍，此处点名不扩锁。
+
+**| pm_verify_018 24/0（基线 20/24→G1/G3/G6/G7 转绿，G2/G4/G8/T6/T8/K 全零回退）|
+pm_verify_017 19/0 不回退 | test_handler ALL PASS (29+4+404，含 TC-R18 10 条 ≥8
+达标) | 九 verify + _verify_r14 25/28/30/30/46/46/43/53/41/43 全 0 | pm012 零 FAIL |
+pm013/014/016 30/29/16 全 0 | 红线四形+write_file+rm -r 分层 6/6 | gateway stop
+PASS | cluster(-r -t/-rt)/长形 --target-directory 紧邻 hit | N-17-2 形行为零变化
+PASS（登记）| 绝对形双代零漂移对拍 5/5 |**
+
+---
+
 ## 2026-09-23 round17（round16 终审 F-16-S1 + 用户「可解释」裁决：宽拦族 tilde 封堵 + 审批文案双支分流，fix-017）
 
 **立项**：round16 合并终审 F-16-S1（MED）——round16 的 `_protect_view_norm` 只接了
