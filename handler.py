@@ -141,6 +141,15 @@ _CONFIG_APPROVE_TEMPLATE = (
     "{path}。修改 Hermes 配置须经您批准，请确认后继续。"
 )
 
+# R17（用户裁决 A「可解释」+ 6cd8874 决策档案登记缺陷）：cp 宽拦族（HOME 内**非清单
+# 落位**，如 skills/、x.dat、目录本身）的审批文案——旧句「受保护的 Hermes 配置文件」
+# 在此场景失实（目标并非配置文件，实际生效=cp+mv 两跳防御的入口宽拦）。纯文案分支，
+# 判定行为零变化。
+_WIDEBLOCK_APPROVE_TEMPLATE = (
+    "write-guard 落位审批：工具「{tool_name}」将向 Hermes 目录（.hermes）内 {path} "
+    "落位文件。该通道防 cp+mv 两跳改写配置（读、改名、源位不受限），经您批准后继续。"
+)
+
 # B 项审批消息模板（FR-09 / 第 6 节）
 _MEMORY_APPROVE_TEMPLATE = (
     "write-guard 记忆写保护：工具「{tool_name}」将写入记忆库。"
@@ -581,11 +590,13 @@ def _shown_path(raw_path: str, norm_target: str) -> str:
     return raw_path
 
 
-def _approve_result(tool_name: str, raw_path: str, norm_target: str) -> dict:
-    """A 项 approve 返回结构（DR-12 / DR-16 / DR-24）。"""
+def _approve_result(tool_name: str, raw_path: str, norm_target: str,
+                    template: str = _CONFIG_APPROVE_TEMPLATE) -> dict:
+    """A 项 approve 返回结构（DR-12 / DR-16 / DR-24）。
+    R17：template 形参供宽拦族分流（默认旧模板=既有调用面零变化）。"""
     return {
         "action": "approve",
-        "message": _CONFIG_APPROVE_TEMPLATE.format(tool_name=tool_name, path=_shown_path(raw_path, norm_target)),
+        "message": template.format(tool_name=tool_name, path=_shown_path(raw_path, norm_target)),
         "rule_key": f"write_guard:config:{norm_target}",
     }
 
@@ -796,7 +807,7 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
             # `cp evil.py <home>/plugins/write-guard/` 归一化后不等于任何受保护文件，
             # 但落盘语义=目录内同名覆写（守卫源码经 terminal 单命令可缴械）。
             if raw.rstrip("\"'").endswith(("/", chr(92))) \
-                    and norm is not None and norm.startswith(_hermes_home() + _SEP):
+                    and norm is not None and _protect_view_norm(norm).startswith(_hermes_home() + _SEP):
                 return True
             # F-1：目标是守卫插件目录（无尾分隔符的 Windows 同义形态）→ 写
             if _is_guard_dir_target(norm):
@@ -809,8 +820,9 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
         # F-1：-t 目标同样接受守卫目录无分隔符形态
         # R4-1（round4）：仅 cp/install 的 -t 是"目标目录"标志；rsync 的 -t 是
         # preserve-times（选项语义不同），按 cp 套用过拦纯读形态 rsync -t <CFG> dest/。
+        _tv = _protect_view_norm(norm)   # R17：宽拦族判定视图（F-16-S1，绝对形 norm==视图零漂移）
         if (cmd in ("cp", "install") and norm is not None
-                and (norm == home or norm.startswith(home + _SEP)
+                and (_tv == home or _tv.startswith(home + _SEP)
                      or _is_guard_dir_target(norm))
                 and (_COPY_T_RE.search(before)
                      # F-13-S1-A2（round14）：--target-directory= 前缀支匹配输入接
@@ -969,7 +981,7 @@ def _judge_terminal(command, tool_name, depth=0, base_cwd=None):
     return None
 
 
-def _config_write_disposition(tool_name, cmd_word, raw, norm):
+def _config_write_disposition(tool_name, cmd_word, raw, norm, wide_landing=False):
     """A 项配置写处置（用户决策 2026-09-21）：
     - 复制类命令（cp/copy/install 目标 / shutil.copy 目标）写配置 → approve（弹卡）
       —— 用户明确：cp 是改配置文件的方法，保留审批通道；
@@ -977,9 +989,13 @@ def _config_write_disposition(tool_name, cmd_word, raw, norm):
       等）→ block（直接截断，必须走 safe-config-modify skill 流程）。
     R16：词表并 _MOVE_CMDS——别名形 `mv x ~/.hermes/config.yaml` 目标覆写=内容替换
     语义（等同 cp）走 approve；绝对形 mv 收集/判定维持既有（改名红线零触碰）。
+    R17（纯文案分流，行为零变化）：wide_landing=落位为目录/宽拦收集形（is_dir_target
+    信号，判定链既有值）→ 审批消息用落位模板；清单内配置文件维持配置模板。
     """
     if cmd_word in _COPY_CMDS + _MOVE_CMDS:
-        return _approve_result(tool_name, raw, norm)
+        return _approve_result(
+            tool_name, raw, norm,
+            _WIDEBLOCK_APPROVE_TEMPLATE if wide_landing else _CONFIG_APPROVE_TEMPLATE)
     return _config_block_result(tool_name, raw, norm)
 
 
@@ -1051,15 +1067,16 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
         # terminal 面额外收集 HERMES_HOME 目录本身：`cp x <home>/` 的目标是
         # 目录（写入落为目录内同名文件）——写矩阵各分支只对真写形态返回
         # True，读命令（cat/grep/ls <home>/）经矩阵判定仍放行（F-A7）。
+        _v = _protect_view_norm(norm)   # R17（F-16-S1）：宽拦族比较点判定视图；token 化/分发 norm 链不动（F-7-2）
         is_dir_target = (raw.rstrip("\"'").endswith(("/", chr(92)))
                          and norm is not None
-                         and (norm == _hermes_home() or norm.startswith(_hermes_home() + _SEP)))
+                         and (_v == _hermes_home() or _v.startswith(_hermes_home() + _SEP)))
         # F-1：收集面同步放宽——守卫目录 token（无尾分隔符）也进写矩阵判定，
         # 读命令（cat/ls 该目录）由矩阵按读语义放行，不受收集面影响。
         if not is_dir_target and _is_guard_dir_target(norm):
             is_dir_target = True
         if not is_dir_target \
-                and norm.startswith(_hermes_home() + _SEP) \
+                and _v.startswith(_hermes_home() + _SEP) \
                 and norm != _hermes_home() \
                 and _command_word(seg) in _COPY_CMDS:
             # C4（round5 sa-0）：cp x <home>/profiles/developer（无尾分隔符，
@@ -1069,16 +1086,33 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             # Q-6-3 名实补记：静态无法辨目录/文件属性，实收 home 内任意末位
             # token（含普通文件）——文件末位=覆写该文件本就应审批，保守方向。
             ptoks = list(_PATH_TOKEN_RE.finditer(seg))
-            if ptoks and ptoks[-1].start() == m.start():
+            _c4 = bool(ptoks and ptoks[-1].start() == m.start())
+            if not _c4 and _v != norm and _command_word(seg) in ("cp", "install"):
+                # R17-1f（F-16-S1 补点，pm017 T6/T8）：-t 目标位非末位 token → C4
+                # 末位约束拒收、矩阵 -t 支（判写语义所在）不可达。仅**别名形**
+                # （norm≠视图；绝对形维持既有双代 PASS 零漂移——r16 mv 支同构门控）
+                # 且本 token 正处 cp/install 的 -t 目标位（粘连 -t<dir>/引号形
+                # = _GLUED_T_RE 提取值；分列形 = 前随 _COPY_T_RE）时入收集面；
+                # 判写仍由矩阵 -t 支既有语义决定（rsync -t 语义分叉不入门）。
+                _c4 = bool(_GLUED_T_RE.match(_pair_unquote(raw))
+                           or _COPY_T_RE.search(seg[:m.start()]))
+            if _c4:
                 is_dir_target = True
-        if _is_protected_config(norm) or norm == _hermes_home() or is_dir_target:
-            protected.append((m, raw, norm))
+        _prot_hit = _is_protected_config(norm)
+        if _prot_hit or _v == _hermes_home() or is_dir_target:
+            # R17 分流（6cd8874 登记缺陷）：清单真配置=受保护 ∧ 带扩展名文件形
+            # （config.yaml/.env/plugins 代码）→ 配置模板；其余 HOME 内落位
+            # （skills 目录名/无扩展/目录本身/x.dat 类非清单）→ 落位模板。
+            # 仅文案信号，判定行为零变化；谓词在收集处一次算，不重算。
+            _fn = norm.rsplit(_SEP, 1)[-1]
+            protected.append((m, raw, norm,
+                              not (_prot_hit and "." in _fn)))
     if not protected:
         return None
-    for m, raw, norm in protected:
+    for m, raw, norm, wide_landing in protected:
         if _terminal_position_is_write(seg, m, raw, norm, cwd):
             cmd_word = _command_word(seg)
-            return _config_write_disposition(tool_name, cmd_word, raw, norm)
+            return _config_write_disposition(tool_name, cmd_word, raw, norm, wide_landing)
     return None
 
 

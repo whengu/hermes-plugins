@@ -1376,6 +1376,75 @@ def run_r16_fixes():
          and _is_approve(_call("execute_code", {"code": "shutil.copy('a','" + TC + "')"})))
 
 
+def run_r17_fixes():
+    """round17 修复回归（fix-017 改动1：宽拦族五比较点+补点接 _protect_view_norm
+    视图——F-16-S1 tilde cp 入口跳封堵；改动2：审批文案双支分流自解释）。
+    靶心 T1~T8 锁 hit、读/源/改名/零漂移锁 PASS、文案 M1/M2 双断言——
+    断言值=施工后实跑核对（同构 pm017 表）。"""
+    B = chr(92)
+    HOME_ABS = "D:" + B + "myagent" + B + ".hermes"
+    def hit(c):
+        r = _call("terminal", {"command": c})
+        return _is_approve(r) or _is_block(r)
+    def msg_of(c):
+        r = _call("terminal", {"command": c})
+        return "" if r is None else str(r.get("message", ""))
+    WIDE = "write-guard 落位审批"
+    LIE = "受保护的 Hermes 配置文件"
+    # 靶心 T1：HOME 内非清单文件 tilde（F-16-S1 主形）→ approve + 落位文案
+    _rec("TC-R17-01 T1 cp evil ~/.hermes/x.dat → approve（宽拦族 tilde 封堵）",
+         _is_approve(_call("terminal", {"command": "cp evil ~/.hermes/x.dat"})))
+    # 靶心 T2/T3：目录落位带/无尾斜杠 tilde → hit
+    _rec("TC-R17-02 T2/T3 cp ~/.hermes/skills/ 与 logs 无尾斜杠 → hit",
+         hit("cp evil ~/.hermes/skills/") and hit("cp evil ~/.hermes/logs"))
+    # 靶心 T4/T5：HOME 本体 + 无扩展名 tilde → hit
+    _rec("TC-R17-03 T4/T5 cp ~/.hermes 目录本身 与 y 无扩展 → hit",
+         hit("cp evil ~/.hermes") and hit("cp evil ~/.hermes/y"))
+    # 靶心 T6：-t 粘连引号整包（补点 1f：C4 末位约束拒收面）→ hit
+    _rec("TC-R17-04 T6 cp \"-t~/.hermes/tdir\" x 粘连 → hit",
+         hit('cp "-t~/.hermes/tdir" x'))
+    # 靶心 T7：载体递归内宽拦 tilde → hit
+    _rec("TC-R17-05 T7 bash -c 内 cp evil ~/.hermes/z → hit",
+         hit("bash -c 'cp evil ~/.hermes/z'"))
+    # 靶心 T8：-t 分列目标位非末位（补点 1f）→ hit
+    _rec("TC-R17-06 T8 cp -t ~/.hermes/x.dat evil → hit",
+         hit("cp -t ~/.hermes/x.dat evil"))
+    # 锁 K1/K6/K7/K8：读位/源读/清单外 echo 写位（非复制族宽拦不扩面）→ PASS
+    _rec("TC-R17-07 K1/K6/K7/K8 cat·ls 读位 + cp 源读 + echo>清单外 锁 → PASS",
+         _call("terminal", {"command": "cat ~/.hermes/x.dat"}) is None
+         and _call("terminal", {"command": "ls ~/.hermes"}) is None
+         and _call("terminal", {"command": "cp ~/.hermes/config.yaml D:/tmpd/d.yaml"}) is None
+         and _call("terminal", {"command": "echo x > ~/.hermes/note.md"}) is None)
+    # 锁 K2/K3：mv 改名 tilde 双位 + 源位读 → PASS（改名红线维持）
+    _rec("TC-R17-08 K2/K3 mv ~/.hermes/a 改名 与 config.yaml 源读 → PASS",
+         _call("terminal", {"command": "mv ~/.hermes/a ~/.hermes/b"}) is None
+         and _call("terminal", {"command": "mv ~/.hermes/config.yaml x"}) is None)
+    # 锁 K4/K5：前缀名 .hermes-agent + HOME 外零扰动 → PASS
+    _rec("TC-R17-09 K4 .hermes-agent 前缀名 + K5 HOME 外落位 → PASS",
+         _call("terminal", {"command": "cp evil ~/.hermes-agent/x"}) is None
+         and _call("terminal", {"command": "cp evil D:/other/x"}) is None)
+    # 锁：绝对形零漂移（K9 approve 不回退；-t 绝对双代既有 PASS 不扩面）+
+    # rsync -t 语义分叉不入门（R4-1 锁形 tilde 化）
+    _rec("TC-R17-10 K9 绝对 cp 不回退 + -t 绝对形零漂移 + rsync -t 分叉锁",
+         _is_approve(_call("terminal", {"command": "cp evil " + HOME_ABS + "/x.dat"}))
+         and _call("terminal", {"command": "cp -t " + HOME_ABS + "/x.dat evil"}) is None
+         and _call("terminal", {"command": "rsync -t ~/.hermes/config.yaml dest/"}) is None)
+    # 文案 M1：宽拦族审批卡自解释（含落位/两跳，不再谎称配置文件）
+    _rec("TC-R17-11 M1 宽拦文案=落位审批含两跳、无谎称配置文件",
+         WIDE in msg_of("cp a.md " + HOME_ABS + "/skills/safe-config-modify")
+         and "两跳" in msg_of("cp a.md " + HOME_ABS + "/skills/safe-config-modify")
+         and LIE not in msg_of("cp evil ~/.hermes/x.dat"))
+    # 文案 M2：清单真配置审批卡保持配置模板（行为与文案双零变化）
+    _rec("TC-R17-12 M2 真配置文案保持「配置文件」句（tilde/绝对）",
+         "配置文件" in msg_of("cp a " + HOME_ABS + "/config.yaml")
+         and "配置文件" in msg_of("cp a ~/.hermes/config.yaml")
+         and WIDE not in msg_of("cp a " + HOME_ABS + "/config.yaml"))
+    # 两跳链端到端：hop1 tilde 入口必 hit（焊死）；hop2 绝对改名红线条不扩面
+    _rec("TC-R17-13 两跳链反例：cp tilde 入口 hit + mv 绝对改名条维持 PASS",
+         hit("cp evil ~/.hermes/x.dat")
+         and _call("terminal", {"command": "mv " + HOME_ABS + "/x.dat " + HOME_ABS + "/config.yaml"}) is None)
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1575,6 +1644,7 @@ run_r13_fixes()
 run_r14_fixes()
 run_r15_fixes()
 run_r16_fixes()
+run_r17_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()
