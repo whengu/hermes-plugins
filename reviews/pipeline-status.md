@@ -136,3 +136,13 @@
 - 在途：round18 聚焦复审（改动面 git diff 0098ebd..HEAD -- handler.py 三点收紧；
   重点：TAIL 锚与 cluster/-rt 交叠、1c bind 否决对「同 token 重复 -t 目标」代价形、
   绝对形双代全量零漂移亲跑、N-17-2 登记面行为零变化复证）。
+
+
+---
+## 复杂度冻结（2026-09-23，用户指令）——本项目进入维护态
+- 用户两次明示：终端命令检查不再增加复杂度；已做好的保留，新的不加，够用。
+  原话与裁决解释见 requirements/decision-20260923-complexity-freeze.md。
+- **round18 = 终态基线**：git d727594，handler sha a746cf032c9c4cfa 四点位已部署，
+  test 29+4+404 ALL PASS。审查循环收口，round18 复审途中叫停（结果仅归档不驱动修复）。
+- 唯一例外通道：真实日常命令发生误拦才针对性处理；exotic 旁路一律按登记边界不修。
+- 遗留待用户在场事项（不新增，仅存量）：gateway 重启使 round3~18 补丁在进程内生效。
