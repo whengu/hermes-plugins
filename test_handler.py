@@ -1317,6 +1317,65 @@ def run_r15_fixes():
          and _call("terminal", {"command": 'curl "-oL" http://x'}) is None)
 
 
+def run_r16_fixes():
+    """round16 修复回归（fix-016 改动1：.hermes 段锚定归一——tilde/$HOME/符号链接
+    别名 写旁路封堵）。靶心 T1~T8 锁 hit、读位/前缀名/零扰动/绝对 mv 红线锁 PASS、
+    K3 别名 mv 目标 approve、ec/wf 继承面锁——断言值=施工后实跑核对（同构 pm016 表）。"""
+    B = chr(92)
+    HOME_ABS = "D:" + B + "myagent" + B + ".hermes"
+    CFGS = "D:/myagent/.hermes/config.yaml"
+    TC = "~/.hermes/config.yaml"
+    PDIR = "~/.hermes/plugins/write-guard"
+    WS = "D:" + B + "myagent" + B + "workspace"
+    ALIAS = "C:/Users/guwh/.hermes/config.yaml"   # 符号链接别名绝对形
+    def hit(c):
+        r = _call("terminal", {"command": c})
+        return _is_approve(r) or _is_block(r)
+    # 靶心 T1/T2：cp tilde=approve、echo> tilde=block（重定向写位）
+    _rec("TC-R16-01 T1/T2 cp/echo> ~/.hermes/config.yaml → approve/block",
+         _is_approve(_call("terminal", {"command": "cp evil " + TC}))
+         and _is_block(_call("terminal", {"command": "echo x > " + TC})))
+    # 靶心 T3：tilde 形缴械向（sed -i 守卫源码）→ block
+    _rec("TC-R16-03 T3 sed -i ~/.hermes/plugins/write-guard/handler.py → block",
+         _is_block(_call("terminal", {"command": "sed -i 's/a/b/' " + PDIR + B + "handler.py"})))
+    # 靶心 T4：tilde×cluster 组合（-t 粘连守卫目录）
+    _rec("TC-R16-04 T4 cp \"-t~/.hermes/plugins/write-guard\" x → 命中",
+         hit('cp "-t' + PDIR + '" x'))
+    # 靶心 T5：tilde×粘连值组合（curl -o 粘连）
+    _rec("TC-R16-05 T5 curl \"-o~/.hermes/config.yaml\" url → block",
+         _is_block(_call("terminal", {"command": 'curl "-o' + TC + '" url'})))
+    # 靶心 T6/T7：$HOME 与 %USERPROFILE% 前缀面（tee/cp）→ 命中
+    _rec("TC-R16-06 T6 tee $HOME/.hermes/config.yaml → block",
+         _is_block(_call("terminal", {"command": "tee $HOME/.hermes/config.yaml"})))
+    _rec("TC-R16-07 T7 cp %USERPROFILE%\\.hermes\\config.yaml / T8 别名绝对 → 命中",
+         hit("cp evil %USERPROFILE%" + B + ".hermes" + B + "config.yaml")
+         and _is_approve(_call("terminal", {"command": "cp evil " + ALIAS})))
+    # K3/K8：别名形 mv 目标覆写=内容替换（同 cp）→ approve；双写位含别名目标
+    _rec("TC-R16-08 K3 mv x ~/.hermes/config.yaml 目标覆写 → approve",
+         _is_approve(_call("terminal", {"command": "mv " + WS + B + "x " + TC})))
+    _rec("TC-R16-09 K8 cp <CFG绝对> ~/.hermes/x.yaml → approve",
+         _is_approve(_call("terminal", {"command": "cp " + HOME_ABS + B + "config.yaml ~/.hermes/x.yaml"})))
+    # 锁形 K1/K7：读位零误拦（本修法最关键反例——tilde 读/别名绝对读均 PASS）
+    _rec("TC-R16-02 K1/K7 cat ~/.hermes/cfg 读位 + cat 别名绝对 读位 → PASS",
+         _call("terminal", {"command": "cat " + TC}) is None
+         and _call("terminal", {"command": "cat " + ALIAS}) is None)
+    # 锁形 K2 + 绝对 mv 红线：tilde/绝对源位读 PASS；TC-R6-10 同形不回退
+    _rec("TC-R16-10 K2 mv ~/.hermes/config.yaml 源位 + mv x 绝对profile目录 红线 → PASS",
+         _call("terminal", {"command": "mv " + TC + " " + WS + "/x"}) is None
+         and _call("terminal", {"command": "mv x D:/myagent/.hermes/profiles/developer"}) is None)
+    # 锁形 K4/K5：前缀名非段（.hermes-agent）+ 非 .hermes（.vscode）零扰动
+    _rec("TC-R16-11 K4 .hermes-agent 前缀名 + K5 ~/.vscode/settings.json → PASS",
+         _call("terminal", {"command": "cp evil ~/.hermes-agent/config.yaml"}) is None
+         and _call("terminal", {"command": "echo x > ~/.vscode/settings.json"}) is None)
+    # 锁形 K6 + 继承面：绝对形 approve 不回潮；wf 直接编辑 tilde→block、
+    # ec open tilde→block、ec shutil tilde→approve（写位置语义全继承）
+    _rec("TC-R16-12 K6 绝对形不回潮 + wf/ec tilde 继承面（block/approve 分流）",
+         _is_approve(_call("terminal", {"command": "cp evil " + CFGS}))
+         and _is_block(_call("write_file", {"path": TC, "content": "x"}))
+         and _is_block(_call("execute_code", {"code": "open('" + TC + "','w')"}))
+         and _is_approve(_call("execute_code", {"code": "shutil.copy('a','" + TC + "')"})))
+
+
 def run_scheduler():
     cmd = "echo hi > D:/myagent/.hermes/config.yaml && echo x > " + _TMP_REF
     res = _call("terminal", {"command": cmd})
@@ -1515,6 +1574,7 @@ run_r12_fixes()
 run_r13_fixes()
 run_r14_fixes()
 run_r15_fixes()
+run_r16_fixes()
 run_x_invariants()
 run_scheduler()
 run_exception_isolation()

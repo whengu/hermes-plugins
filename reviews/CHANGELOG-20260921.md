@@ -10,6 +10,48 @@
 
 ---
 
+## 2026-09-23 round16（用户提议触发：`.hermes` 段锚定归一——tilde/$HOME/别名路径写旁路封堵，fix-016）
+
+**立项**：用户提议「审批加 ~/.hermes/ 检查，或干脆 */.hermes/*.yaml」。PM 实测坐实
+真旁路：`cp evil ~/.hermes/config.yaml`、`echo > ~/.hermes/config.yaml`、`sed -i
+~/.hermes/plugins/write-guard/handler.py`（tilde 缴械）、`tee $HOME/...`、旧符号链接
+别名绝对形、目标位 mv 共 **9 形 judge=PASS**，绝对路径同语义=approve。git-bash
+`~/.hermes` 经符号链接可达线上配置=真写威胁非假想形。设计决策：**拒裸 glob**（字符串
+出现即弹→`cat ~/.hermes/config.yaml` 读位误拦+漏 .py/memories 面），采**段锚定归一**
+（用户确认读必须放过=验收反例锁形 K1/K2/K7）。pm_verify_016 基线 7 ok/9 FAIL。
+
+**修复项（施工子代理 sa-0-56a8f57e 交付截断第 9 次，制品 6×[DONE] 全落；本节为 PM 收线
+补记，以下数字全部 PM 独立复跑实测）**：
+- handler +30/-1（git diff --stat 实核 31 行变更=30 增 1 删）：`_HERMES_SEG_RE`（段边界，`.hermes-agent` 前缀名不算）+
+  `_protect_view_norm`（norm≠主目录根/.hermes 别名形原样返回；别名形重写为真实
+  HERMES_HOME 等价视图）——**只接判定入口**（_is_protected_config /
+  _is_guard_dir_target / mv 别名支 / disposition 词表），token 化/norm 分发链不动
+  （F-7-2 纪律）。
+- mv 语义甄别：绝对形 mv 维持改名红线放行（OOS-09 零触碰）；**别名形末位目标覆写**
+  =内容替换语义（等同 cp）→ 写、disposition 走 approve（`mv x ~/.hermes/config.yaml`
+  弹卡；`mv ~/.hermes/config.yaml y` 源位读 PASS）。
+- TC-R16 12 条（≥10 达标）+ pm_verify_016 **16/16**：T1~T6/T8 tilde/$HOME/别名写全
+  转 hit；K1 `cat ~/.hermes/config.yaml`、K2 mv 源位、K7 别名读、K4 `.hermes-agent`、
+  K5 `~/.vscode` 零误拦全保持 PASS。
+- 全门禁链 PM 亲验零回退：test_handler **ALL PASS (29+4+381)**、_verify_r14 43/0、
+  pm014 29/0、pm013 30/0、九 verify 41/53/43/46/46/30/30/28/25 全 0、pm012 零 FAIL、
+  红线四形 4/4（gateway=block、cp 配置=approve、Copy 源读=PASS、-Destination
+  CFG WS=approve）。
+
+**教训/口径**：立项句「用户提议触发」如实记载——收敛判据达成后用户新观察仍可开新轮，
+收敛不是封盘。别名路径族（`~`/`$HOME`/符号链接）在归一视图补齐后，劈 token 穿插族
+（`~/.\hermes/...` 之类 exotic）仍维持排除登记。
+
+| # | 命令 | 结果 |
+|---|------|------|
+| 1 | python reviews/fix016-scratch/pm_verify_016.py | 通过 16 失败 0（基线 9 FAIL 全转绿、7 ok 零回退） |
+| 2 | python test_handler.py | ALL PASS (29 scan + 4 hook + 381 new，含 TC-R16 12 条) |
+| 3 | python _verify_r14.py / pm014 / pm013 | 43/0、29/0、30/0 |
+| 4 | 九 verify r13~r3 | 41/53/43/46/46/30/30/28/25 全零失败 |
+| 5 | python reviews/fix012-scratch/pm_verify_012.py | 零 FAIL |
+| 6 | 红线四形（on_pre_tool_call） | 4/4 正确 |
+| 7 | tilde 新面抽验（cat 读/mv 源/别名读/`.hermes-agent`/非 .hermes） | 全 PASS 零误拦 |
+
 ## 2026-09-23 round15（round14 双路 NOTES 收线：S14-1 cluster 零-dash 误拦收窄 + Q1/Q2 名实改实，fix-015）
 
 **立项**：round14 双路裁决——安全路 review-014-sec CHANGES REQ（S14-1，MED：

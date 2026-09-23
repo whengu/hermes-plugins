@@ -492,6 +492,25 @@ def _hermes_home() -> str:
     return norm if norm is not None else _normalize_path(_DEFAULT_HERMES_HOME)
 
 
+# R16（round16）.hermes 段锚定归一：tilde/$HOME/%USERPROFILE%/符号链接别名 norm 后
+# 落「用户主目录根/.hermes/<rel>」（段边界，前缀名 .hermes-agent 不算）→ 重写为真实
+# HERMES_HOME 等价 norm 进既有判定管线（其余路径零扰动）。F-7-2 纪律：只造「保护面
+# 匹配视图」，分发用 norm 不改写——仅接判定入口（_is_protected_config/_is_guard_dir_
+# target/mv 别名支）不接 token 化/norm 链。
+_HERMES_SEG_RE = re.compile(r"(?:^|[/\\])\.hermes(?:[/\\]|$)")
+
+
+def _protect_view_norm(norm):
+    """段锚定重写（判定视图专用，见上方注释）：非「主目录根/.hermes」别名形原样返回。"""
+    if not isinstance(norm, str):
+        return norm
+    m = _HERMES_SEG_RE.search(norm)
+    if not m or norm[:m.start()].rstrip("/") != _normalize_path(os.path.expanduser("~")):
+        return norm
+    rel = norm[m.end():].lstrip("/")
+    return _hermes_home() + (_SEP + rel if rel else "")
+
+
 # 受保护配置文件判定口径（用户决策 2026-09-21「范围要扩大」）：
 # HERMES_HOME 内 + （扩展名 yaml/yml/json，或文件名含 config，或 .env 系列）
 # → 受保护。skills/*.md、logs/、cache/ 等非配置文件不保护（保护范围与可用性
@@ -509,6 +528,7 @@ def _is_protected_config(norm_target: str) -> bool:
     """受保护判定（DR-06 / DR-21）：前缀匹配（HERMES_HOME 内）
     + 目标为配置文件（扩展名 yaml/yml/json 或文件名含 config 或 .env 系列）。
     前缀拼接 / 前缀比对 / 文件名提取统一使用正斜杠常量 _SEP，禁用 os.sep。"""
+    norm_target = _protect_view_norm(norm_target)   # R16：段锚定归一入既有面判定
     home = _hermes_home()
     if norm_target == home:                      # 指向目录本身：非内容写入
         return False
@@ -695,6 +715,7 @@ def _is_guard_dir_target(norm) -> bool:
     缴械全部保护，此处宁拦勿漏（该目录作为复制末位目标无合法写场景）。"""
     if norm is None:
         return False
+    norm = _protect_view_norm(norm)   # R16：段锚定归一（T4 tilde×守卫目录形，判定视图）
     # D1（round5 sa-0）：OBS-1 镜像后 profile 会话加载
     # <root>/profiles/<p>/plugins/write-guard/ 副本——守卫目录识别不限主 home，
     # 任何 root 下的 plugins/write-guard 路径段均为反缴械目标（段边界匹配，
@@ -803,6 +824,12 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
             return True
         return False
     if cmd in _MOVE_CMDS:
+        # R16：别名形（norm≠段锚定视图）末位目标覆写=内容替换语义（同 cp 目标）→ 写；
+        # 绝对形 norm==视图，维持改名红线放行（OOS-09/L4），源位非末位亦放行（K2）。
+        ptoks = list(_PATH_TOKEN_RE.finditer(seg))
+        if (norm is not None and _protect_view_norm(norm) != norm
+                and ptoks and ptoks[-1].start() == m.start()):
+            return True
         return False                       # 路径级操作（OOS-09）不拦
     # truncate 置零目标文件 → 写（安全走查 F-A5）
     if cmd == "truncate":
@@ -948,8 +975,10 @@ def _config_write_disposition(tool_name, cmd_word, raw, norm):
       —— 用户明确：cp 是改配置文件的方法，保留审批通道；
     - 其他一切写配置方法（echo >/tee/sed -i/curl -o/execute_code open('w')
       等）→ block（直接截断，必须走 safe-config-modify skill 流程）。
+    R16：词表并 _MOVE_CMDS——别名形 `mv x ~/.hermes/config.yaml` 目标覆写=内容替换
+    语义（等同 cp）走 approve；绝对形 mv 收集/判定维持既有（改名红线零触碰）。
     """
-    if cmd_word in _COPY_CMDS:
+    if cmd_word in _COPY_CMDS + _MOVE_CMDS:
         return _approve_result(tool_name, raw, norm)
     return _config_block_result(tool_name, raw, norm)
 

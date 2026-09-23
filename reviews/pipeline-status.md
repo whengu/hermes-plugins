@@ -83,3 +83,24 @@
   HEAD 终态）起审查循环终止。剩余唯一收尾= gateway 重启使 round3~15 全部补丁在运行进程
   生效（approvals.mode: manual 下 `hermes gateway restart` 被守卫正确拦截，需用户在会话
   时批准审批卡或手动重启——守卫按设计工作，此为红线非缺陷）。
+
+
+---
+## Round16（2026-09-23）— 用户提议触发：tilde/$HOME 别名路径写旁路立项
+- 用户提议「审批加 ~/.hermes/ 路径检查，或干脆 */.hermes/*.yaml」。PM 实测坐实真旁路
+  （cp/echo>/sed -i/-t 粘连/-o 粘连/tee $HOME/旧符号链接别名绝对形/目标位 mv 共 9 形
+  judge=PASS，绝对路径同语义=approve；读位 cat/mv 源位 正常 PASS）。
+- 设计决策：不采裸 glob 字面匹配（读位误拦+漏 .py/memories 面），采 **.hermes 段锚定
+  归一**——写目标判定输入处取 .hermes 后 rel 与既有受保护集合 rel 级比对，单点插入
+  ≤12 行，读/写位置语义全继承。
+- 完成定义 pm_verify_016 基线 7 ok/9 FAIL → 0 FAIL。立项 commit 4ddc3ba。
+- 在途：sa-0-56a8f57e 照图施工（制品纪律+TC-R16+CHANGELOG 随批）。
+
+
+### Round16 施工交付与 PM 收线（2026-09-23）
+- sa-0-56a8f57e 交付截断（第 9 次），制品 6×[DONE]+代码+TC 全落盘；CHANGELOG round16 节
+  为截断缺口，PM 按亲验数字收线补记（含 diff 行数失实一处自纠 +31→+30 增）。
+- PM 门禁全亲验：pm016 16/16（9 靶心转绿+7 锁零回退）、test 29+4+381、r14 43、pm014 29、
+  pm013 30、九 verify 全 0、pm012 零 FAIL、红线四形 4/4、tilde 抽验 7 形零误拦。
+- 用户确认项：cat 读必须放过=已锁 K1/K7 反例（弹卡即验收失败）。
+- 在途：round16 聚焦复审（改动面 ~30 行单点归一+mv 甄别，邻域差分+读写位置语义专项）。
