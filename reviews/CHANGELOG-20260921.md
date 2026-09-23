@@ -43,9 +43,20 @@ N-17-3 rule_key 以 norm 为键、tilde/绝对别名弹卡键不互认（round16
 **| pm_verify_018 24/0（基线 20/24→G1/G3/G6/G7 转绿，G2/G4/G8/T6/T8/K 全零回退）|
 pm_verify_017 19/0 不回退 | test_handler ALL PASS (29+4+404，含 TC-R18 10 条 ≥8
 达标) | 九 verify + _verify_r14 25/28/30/30/46/46/43/53/41/43 全 0 | pm012 零 FAIL |
-pm013/014/016 30/29/16 全 0 | 红线四形+write_file+rm -r 分层 6/6 | gateway stop
-PASS | cluster(-r -t/-rt)/长形 --target-directory 紧邻 hit | N-17-2 形行为零变化
+pm013/014/016 30/29/16 全 0 | 红线复验 9/9（probe_018_redline，含 -rt 方向对偶锁）|
+cluster(-r -t/-rt)/长形 --target-directory 紧邻 hit | N-17-2 形行为零变化
 PASS（登记）| 绝对形双代零漂移对拍 5/5 |**
+
+【r18 终审 N-18-2 改实：本行原写「红线四形+write_file+rm -r 分层 6/6」系沿用旧句式
+陈旧表述——实际工件为 probe_018_redline 9 形 ALL-OK，按实修正。】
+
+**round18 聚焦终审（用户纠正「最终审查不可跳过」后回补）裁决：PASS**
+（`reviews/audit-round18/review-018.md`，41 调用独立复跑）：F-17-S1 四靶心三代
+复位（r16 PASS→r17 approve→r18 PASS，含载体内形全谱）；1c 副作用面净变化 1 形
+（`cp -t D:/out a <tilde清单末位>` approve→PASS，系 GNU 源位语义 FP 消除非新旁路）
+→ **N-18-1 登记不修**（复杂度冻结②类）；41 形三代矩阵 r17→r18 切换 8 形全为复位向、
+新误拦 0；红线/门禁/名实全对拍，N-18-2 即上述 6/6 陈旧句。round18 `d727594` =
+终态基线经完整终审成立，不开 round19。
 
 ---
 
