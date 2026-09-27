@@ -1,0 +1,14 @@
+name: toast-notify
+version: 1.1.1
+description: >-
+  CLI Windows 桌面通知（Toast，windows-toasts/WinRT 进程内直发，无子进程无 shell）。
+  两个事件：①agent 回复完成（post_llm_call, platform=cli）；②审批请求弹出
+  （pre_approval_request, surface=cli）。不依赖终端 OSC 支持，窗口最小化/被遮挡时
+  通知中心照常可见；正文原样输出（仅换行折叠/控制符剔除/截断的最小渲染处理）。
+  纯观察者，返回值恒 None；投递在专用 daemon 短线程完成，调用方毫秒级返回；
+  发送失败静默降级（仅首错告警一次）。
+python_dependencies:
+  - windows-toasts>=1.3,<2
+provides_hooks:
+  - post_llm_call
+  - pre_approval_request

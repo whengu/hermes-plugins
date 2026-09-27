@@ -500,6 +500,47 @@ def run_gateway_cmd():
 
 
 
+def run_operation_guards():
+    """守卫 E/F：Gateway 重启与 py_compile 命令面审批（用户 2026-09-27 决策）。"""
+    # E：脚本调用 / PowerShell cmdlet / 顺序 / 内嵌命令文本
+    res = _call("terminal", {"command":
+        "powershell -ExecutionPolicy Bypass -File D:/scripts/gateway-restart.ps1"})
+    ok = _is_approve(res)
+    ok = ok and res.get("rule_key") == "write_guard:gateway_restart:terminal"
+    ok = ok and "Gateway 重启审批" in res.get("message", "")
+    _rec("TC-EF-01 terminal gateway-restart.ps1 → approve", ok)
+    res = _call("terminal", {"command": "Restart-Gateway -Force"})
+    ok = _is_approve(res) and res.get("rule_key") == "write_guard:gateway_restart:terminal"
+    _rec("TC-EF-02 terminal Restart-Gateway 反序 → approve", ok)
+    res = _call("execute_code", {"code": "subprocess.run(['gateway', 'restart'])"})
+    ok = _is_approve(res) and res.get("rule_key") == "write_guard:gateway_restart:execute_code"
+    _rec("TC-EF-03 execute_code 内嵌 gateway restart → approve", ok)
+    res = _call("terminal", {"command": "hermes gateway restart"})
+    ok = _is_block(res) and res.get("message") == handler._GATEWAY_BANNED_MESSAGE
+    _rec("TC-EF-04 D 禁令优先：hermes gateway restart 仍 block", ok)
+    ok = _call("terminal", {"command": "gateway status"}) is None
+    ok = ok and _call("terminal", {"command": "restart nginx"}) is None
+    _rec("TC-EF-05 仅 gateway 或仅 restart → 放行", ok)
+
+    # F：python -m py_compile / import / 大小写 / pyright 负例
+    res = _call("terminal", {"command": "python -m py_compile handler.py"})
+    ok = _is_approve(res)
+    ok = ok and res.get("rule_key") == "write_guard:py_compile:terminal"
+    ok = ok and "pyright" in res.get("message", "")
+    _rec("TC-EF-06 terminal python -m py_compile → approve", ok)
+    res = _call("execute_code", {"code": "import py_compile; py_compile.compile('x.py')"})
+    ok = _is_approve(res) and res.get("rule_key") == "write_guard:py_compile:execute_code"
+    _rec("TC-EF-07 execute_code import py_compile → approve", ok)
+    res = _call("terminal", {"command": "python -m PY_COMPILE x.py"})
+    _rec("TC-EF-08 py_compile 大小写变体 → approve", _is_approve(res))
+    ok = _call("terminal", {"command": "pyright handler.py"}) is None
+    ok = ok and _call("execute_code", {"code": "print('pyright')"}) is None
+    _rec("TC-EF-09 pyright / 不含 py_compile → 放行", ok)
+    ok = _call("execute_code", {"code": None}) is None
+    ok = ok and _call("terminal", {}) is None
+    _rec("TC-EF-10 非字符串/缺参 → 放行", ok)
+
+
 def run_sec_bypass():
     """sa-0 对抗安全走查修复回归（F-A1~A7 + C-cwd + 反缴械）。"""
     global _new_case_count
@@ -1679,6 +1720,7 @@ run_a_reviewfix()
 run_b()
 run_c_readtools()
 run_gateway_cmd()
+run_operation_guards()
 run_sec_bypass()
 run_m_fixes()
 run_r3_fixes()

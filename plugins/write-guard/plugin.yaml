@@ -1,0 +1,13 @@
+name: write-guard
+version: 1.3.0
+description: >-
+  Hermes 工具调用前置守卫，六项拦截：[D] 禁止直接调用 hermes gateway restart/run/start
+  （须走 gateway-restart skill）；[C] 命令/代码/路径引用系统临时目录（/tmp、\Temp、$TEMP 等）
+  即拦截（5 项纯读取工具豁免）；[E] terminal/execute_code 命令文本同时出现 gateway
+  与 restart（含 gateway-restart.ps1）需人工审批；[F] terminal/execute_code 的
+  command/code 参数出现 py_compile 需人工审批（Python 代码检查请用 pyright）；
+  [A] HERMES_HOME 下配置文件写保护
+  （文件编辑工具直接截断，须走 safe-config-modify skill；cp 类写目标转人工审批）；
+  [B] 记忆写入需人工审批。
+provides_hooks:
+  - pre_tool_call

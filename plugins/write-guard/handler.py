@@ -1,9 +1,11 @@
 """write-guard: Hermes 工具调用前置守卫（pre_tool_call hook）。
 
-四项独立守卫，按固定顺序 [D, C, A, B] 轮询，命中即返回（详见 ⑤ 调度器区）：
+六项独立守卫，按固定顺序 [D, C, E, F, A, B] 轮询，命中即返回
+（详见 ⑤ 调度器区）：
   D  Gateway 生命周期命令禁令   hermes gateway restart|run|start → block
   C  临时目录拦截              命令/代码/路径引用系统临时目录 → block
-     （读取方向工具 _READ_TOOLS 无条件放行，不扫描其参数）
+  E  Gateway 重启操作审批      command/code 同时出现 gateway 与 restart → approve
+  F  py_compile 使用审批       command/code 出现 py_compile → approve
   A  配置写保护                HERMES_HOME 内配置文件写入 → block / approve
      write_file / patch 直接编辑 → block（必须走 safe-config-modify skill）
      terminal / execute_code    cp 类 → approve（弹审批）；其他写形态 → block
@@ -434,7 +436,7 @@ def _strip_outer_quotes(text: str) -> str:
     return text
 
 
-def _normalize_path(text, base=None):
+def _normalize_path(text: str, base: str | None = None) -> str | None:
     """路径归一化（DR-07 / DR-22 / DR-27），任一步无法处理返回 None（Q-03 放行）。
     步骤（顺序即正确性的一部分，不可重排）：
       1 环境变量展开 → 2 去外层引号 → 3 verbatim 前缀剥离（\\?\\ 等）
@@ -477,6 +479,7 @@ def _normalize_path(text, base=None):
         base = os.getcwd()
     if isinstance(base, str):
         base = base.replace("\\", "/")
+    assert isinstance(base, str)
     # 绝对路径判定须同时识别盘符形态（D:/... 不以 / 开头，DR-21 归一化后盘符
     # 绝对路径以 d: 开头）与根路径形态；其余按相对路径基于 base 拼接
     if not s.startswith("/") and not _ABS_PATH_RE.match(s):
@@ -501,7 +504,12 @@ def _hermes_home() -> str:
     """HERMES_HOME 运行时实时读取（DR-05）：未设置或空字符串回退默认值；不缓存。"""
     raw = os.environ.get("HERMES_HOME") or _DEFAULT_HERMES_HOME
     norm = _normalize_path(raw)
-    return norm if norm is not None else _normalize_path(_DEFAULT_HERMES_HOME)
+    if norm is not None:
+        return norm
+    fallback = _normalize_path(_DEFAULT_HERMES_HOME)
+    if fallback is None:
+        fallback = _DEFAULT_HERMES_HOME.replace("\\", "/").lower()
+    return fallback
 
 
 # R16（round16）.hermes 段锚定归一：tilde/$HOME/%USERPROFILE%/符号链接别名 norm 后
@@ -681,7 +689,7 @@ _OUTPUT_FLAG_EQ_RE = re.compile(
     r"(?:--output-document|--output|-o|-O)=(.*)$", re.IGNORECASE)
 
 
-def _command_word(seg: str):
+def _command_word(seg: str) -> str | None:
     """命令段首个实词（命令名）。S-4（round9 fix-009）：循环剔除前导 wrapper 词
     （sudo|time|env|nohup|runas）、环境赋值词（LANG=C）、选项词（/c、-u——首个实词
     之前的连续位），取下一实词；全被剔除→None（按不可判定放行）。零新解析层。"""
@@ -797,7 +805,7 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
         gl = _PS_GLUED_NAMED_RES.get(cmd)
         own = anch.search(before) if anch else None
         own_gl = bool(gl.match(raw)) if gl else False
-        if named and (own or own_gl) \
+        if named and (own or own_gl) and bind is not None \
                 and not bind.search(seg[:own.start()] if own else seg[:m.start()]) \
                 and not bind.search(seg[m.end():]):
             return True
@@ -809,7 +817,7 @@ def _terminal_position_is_write(seg: str, m, raw: str, norm: str, cwd: str) -> b
                     and _COPY_T_RE.search(before) and not _COPY_T_TAIL_RE.search(before))
         if path_tokens and path_tokens[-1].start() == m.start() \
                 and not _t_other \
-                and (not named or (own
+                and (not named or (own and bind is not None
                         and not bind.search(seg[:own.start()])
                         and not bind.search(seg[m.end():]))):
             # H-1：末位参数为 home 内**目录**形态（原始 token 以分隔符结尾）→ 写目标。
@@ -1071,7 +1079,7 @@ def _judge_terminal_segment(seg: str, cwd: str, tool_name: str, depth=0):
             gm = _GLUED_T_RE.match(_pair_unquote(raw)) or _GLUED_O_RE.match(_ou)   # Q-6-1：-t<dir> / S-1：-o<file> 粘连短形
             # F-11-1（round12）建支，round13 per-cmd 化：冒号粘连值段按本 cmd 目标
             # 词表匹配（引号优先于 t/o 误提取）——非本 cmd 目标族标志不提取。
-            gn = _PS_GLUED_NAMED_RES.get(cmdw)
+            gn = _PS_GLUED_NAMED_RES.get(cmdw) if cmdw is not None else None
             gn = gn.match(raw) if gn else None
             norm_raw = gn.group(2) if gn else (gm.group(1) if gm else raw)
         norm = _normalize_path(norm_raw, base=cwd)
@@ -1319,10 +1327,35 @@ _GATEWAY_BANNED_RE = re.compile(
 )
 _GATEWAY_BANNED_MESSAGE = "你违反了用户的规则, 必须使用skill指定的方式来访问hermes gateway"
 
-# 固定轮询顺序 [D, C, A, B]（Q-01 用户决策 + 2026-09-21 用户禁令新增 D）：
-# D gateway 命令禁令最前（轻量精确正则、独立于其余守卫），C 临时目录拦截次之，
-# A 配置写保护，B 记忆写保护最后。C 结构性排在 A/B 之前，保证 A/B 任何异常或
-# 改动都无法旁路 C。
+# E/F 守卫扫描面（2026-09-27 用户决策）：terminal command / execute_code code
+# 两个命令执行面参数；与 D 的扫描面一致，独立成表保持守卫常量互不耦合。
+_OPERATION_APPROVAL_SCAN_ARGS = {"terminal": "command", "execute_code": "code"}
+
+# 守卫 E 匹配（2026-09-27）：命令文本同时出现 gateway 与 restart 字样（含
+# gateway-restart.ps1、Restart-Gateway 等形态），任意顺序均命中；D 的 hermes
+# 直写禁令在前保持 block，本守卫只补非 hermes 形态的 Gateway 重启审批面。
+_GATEWAY_RESTART_APPROVE_RE = re.compile(
+    r"\bgateway\b.*\brestart\b|\brestart\b.*\bgateway\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_GATEWAY_RESTART_APPROVE_MESSAGE = (
+    "write-guard Gateway 重启审批：工具「{tool_name}」将执行涉及 gateway 与 restart "
+    "的命令。未经您的批准不得执行 Gateway 重启，请确认后继续。"
+)
+
+# 守卫 F 匹配（2026-09-27）：命令文本出现 py_compile（python -m py_compile、
+# import py_compile 等形态）。py_compile 是用户明确禁止的工具，Python 代码检查
+# 一律使用 pyright；命中仍走 approve 弹审批，由用户决定是否放行。
+_PY_COMPILE_APPROVE_RE = re.compile(r"\bpy_compile\b", re.IGNORECASE)
+_PY_COMPILE_APPROVE_MESSAGE = (
+    "write-guard 工具审批：工具「{tool_name}」将调用 py_compile。py_compile 已被用户"
+    "禁止，Python 代码检查请使用 pyright；如仍需执行，请确认后继续。"
+)
+
+# 固定轮询顺序 [D, C, E, F, A, B]（Q-01 用户决策 + 2026-09-21 用户禁令新增 D +
+# 2026-09-27 用户决策新增 E/F）：D gateway 命令禁令最前，C 临时目录拦截次之，
+# E/F 两项命令面审批再次，A 配置写保护、B 记忆写保护最后。C 结构性排在 A/B
+# 之前，保证 A/B 任何异常或改动都无法旁路 C。
 
 def _guard_gateway_cmd(tool_name: str, args: dict, task_id: str = "") -> dict | None:
     """守卫 D：Gateway 生命周期命令禁令（用户决策 2026-09-21）。
@@ -1353,16 +1386,68 @@ def _guard_gateway_cmd(tool_name: str, args: dict, task_id: str = "") -> dict | 
     return None
 
 
+def _guard_gateway_restart_approval(
+        tool_name: str, args: dict, task_id: str = "") -> dict | None:
+    """守卫 E：Gateway 重启操作审批（2026-09-27 用户决策）。
+    terminal.command / execute_code.code 同时出现 gateway 与 restart 字样（含
+    gateway-restart.ps1 脚本调用等形态）→ approve。D 的 hermes 直写禁令仍在前
+    保持 block，本守卫只兜住其余形态的 Gateway 重启审批面。"""
+    arg_name = _OPERATION_APPROVAL_SCAN_ARGS.get(tool_name)
+    if arg_name is None:
+        return None
+    text = args.get(arg_name)
+    if not isinstance(text, str) or not text:
+        return None
+    text = _join_line_continuations(text)
+    if _GATEWAY_RESTART_APPROVE_RE.search(text):
+        logger.warning(
+            "write-guard: 命中 %s（task=%s）— Gateway 重启需人工审批",
+            tool_name, task_id,
+        )
+        return {
+            "action": "approve",
+            "message": _GATEWAY_RESTART_APPROVE_MESSAGE.format(tool_name=tool_name),
+            "rule_key": f"write_guard:gateway_restart:{tool_name}",
+        }
+    return None
+
+
+def _guard_py_compile_approval(
+        tool_name: str, args: dict, task_id: str = "") -> dict | None:
+    """守卫 F：py_compile 使用审批（2026-09-27 用户决策）。
+    terminal.command / execute_code.code 出现 py_compile → approve，未经用户
+    批准不得执行；Python 代码检查仍一律使用 pyright。"""
+    arg_name = _OPERATION_APPROVAL_SCAN_ARGS.get(tool_name)
+    if arg_name is None:
+        return None
+    text = args.get(arg_name)
+    if not isinstance(text, str) or not text:
+        return None
+    if _PY_COMPILE_APPROVE_RE.search(text):
+        logger.warning(
+            "write-guard: 命中 %s（task=%s）— py_compile 需人工审批",
+            tool_name, task_id,
+        )
+        return {
+            "action": "approve",
+            "message": _PY_COMPILE_APPROVE_MESSAGE.format(tool_name=tool_name),
+            "rule_key": f"write_guard:py_compile:{tool_name}",
+        }
+    return None
+
+
 GUARDS = [
     _guard_gateway_cmd,     # D：Gateway 生命周期命令禁令（2026-09-21 用户决策）
     _guard_tmpdir,          # C：临时目录拦截
+    _guard_gateway_restart_approval,  # E：Gateway 重启操作审批（2026-09-27）
+    _guard_py_compile_approval,       # F：py_compile 使用审批（2026-09-27）
     _guard_hermes_config,   # A：配置写保护
     _guard_memory_write,    # B：记忆写保护
 ]
 
 
 def on_pre_tool_call(tool_name, args, task_id="", **kwargs):
-    """唯一入口：按固定顺序 [D, C, A, B] 轮询各守卫，命中即返，全部未命中放行。
+    """唯一入口：按固定顺序 [D, C, E, F, A, B] 轮询各守卫，命中即返，全部未命中放行。
     项级 try/except 异常隔离（FR-14）：任一守卫抛异常 → 记日志后按未命中处理、
     继续轮询后续守卫，插件不整体失效（不得依赖平台 hook 异常兜底，平台行为
     为整个 hook 返回放行）。"""

@@ -1,0 +1,7 @@
+name: web-firecrawl-selfhosted
+version: 1.0.0
+description: "Firecrawl web search + extract（自建适配版）— 修复自建 Firecrawl API_URL 带 /firecrawl 路径前缀被 SDK 吞掉的问题，内置 firecrawl 独立可更新。"
+author: guwh
+kind: backend
+provides_web_providers:
+  - firecrawl-selfhosted

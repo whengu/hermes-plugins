@@ -1,0 +1,7 @@
+name: web-searchapi
+version: 1.0.0
+description: "元搜索 web search — 调用自建元搜索引擎 API（百度/必应/搜狗聚合），入口 http://192.168.155.44:8000/to68/searchAPI/"
+author: guwh
+kind: backend
+provides_web_providers:
+  - searchapi

@@ -1,9 +1,0 @@
-name: write-guard
-version: 1.2.0
-description: >-
-  Hermes 工具调用前置守卫，四项拦截：[D] 禁止直接调用 hermes gateway restart/run/start
-  （须走 gateway-restart skill）；[C] 命令/代码/路径引用系统临时目录（/tmp、\Temp、$TEMP 等）
-  即拦截（5 项纯读取工具豁免）；[A] HERMES_HOME 下配置文件写保护（文件编辑工具直接截断，
-  须走 safe-config-modify skill；cp 类写目标转人工审批）；[B] 记忆写入需人工审批。
-provides_hooks:
-  - pre_tool_call
